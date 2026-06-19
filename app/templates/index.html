@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Memory &amp; Compliance Analyzer</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+    --txt:#e6e9ef; --muted:#8b93a3; --accent:#7c9eff; --accent2:#a78bfa;
+    --green:#4ade80; --amber:#fbbf24; --red:#f87171; --cyan:#22d3ee; --slate:#94a3b8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  .app{display:grid;grid-template-columns:330px 1fr;height:100vh}
+  /* Sidebar */
+  .side{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+  .side h1{font-size:14px;margin:0;padding:15px 16px;border-bottom:1px solid var(--border);line-height:1.3}
+  .side h1 small{color:var(--muted);font-weight:400;display:block;font-size:11px;margin-top:3px}
+  .ctl{padding:11px 13px;border-bottom:1px solid var(--border)}
+  select{width:100%;background:var(--panel2);color:var(--txt);border:1px solid var(--border);
+         border-radius:8px;padding:8px 10px;font-size:13px}
+  .sessions{overflow-y:auto;flex:1;min-height:0}
+  .sess{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12.5px}
+  .sess:hover{background:var(--panel2)}
+  .sess.active{background:#243043;border-left:3px solid var(--accent)}
+  .sess .id{font-family:var(--mono);color:var(--accent);font-size:11px}
+  .sess .pr{margin:3px 0;line-height:1.35}
+  .sess .mt{color:var(--muted);font-size:11px;display:flex;gap:7px;flex-wrap:wrap}
+  .badge{background:#283042;border-radius:5px;padding:1px 6px;font-size:10.5px;color:var(--muted)}
+  /* Main */
+  .main{overflow-y:auto;padding:22px 28px;min-height:0}
+  .empty{color:var(--muted);text-align:center;margin-top:18vh;font-size:14px}
+  .loading{color:var(--muted);margin-top:20vh;text-align:center}
+  .shead{margin-bottom:18px}
+  .shead .id{font-family:var(--mono);color:var(--accent);font-size:13px}
+  .srcbadge{font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-radius:5px;padding:2px 7px;margin-right:6px;font-family:system-ui}
+  .srcbadge.claude{background:#2a2150;color:#c4b5fd} .srcbadge.codex{background:#0e3a34;color:#5eead4}
+  .shead .sub{color:var(--muted);font-size:12.5px;margin-top:4px;line-height:1.5}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--slate);
+     margin:0 0 12px;display:flex;align-items:center;gap:9px}
+  h2 .n{background:var(--panel2);border:1px solid var(--border);border-radius:20px;
+        padding:1px 9px;font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0}
+  section{margin-bottom:30px}
+  /* Session overview */
+  .ov-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:10px;margin-bottom:14px}
+  .ocard{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+  .ocard .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+  .ocard .v{font-size:20px;margin-top:5px;font-family:var(--mono)}
+  .ocard .v small{font-size:11px;color:var(--muted)}
+  .ocard .v .err{color:var(--red);font-size:13px}
+  .bars{display:flex;flex-direction:column;gap:5px}
+  .bar{display:grid;grid-template-columns:minmax(120px,260px) 1fr 64px;gap:11px;align-items:center;font-size:12px}
+  .bar .lbl{font-family:var(--mono);color:#cdd6ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar .track{background:var(--panel2);border-radius:5px;height:15px;overflow:hidden}
+  .bar .fill{background:linear-gradient(90deg,var(--accent),var(--accent2));height:100%;border-radius:5px}
+  .bar .c{font-family:var(--mono);text-align:right;color:var(--muted)}
+  .bar .c .e{color:var(--red)}
+  /* Timeline (primary) */
+  .tl2{position:relative}
+  .tl2::before{content:"";position:absolute;left:79px;top:6px;bottom:6px;width:2px;background:var(--border)}
+  .trow{display:grid;grid-template-columns:62px 16px 1fr;gap:10px;align-items:start;padding:7px 0}
+  .trow .t-ts{font-family:var(--mono);color:var(--muted);font-size:11px;text-align:right;padding-top:3px}
+  .t-dot{width:11px;height:11px;border-radius:50%;margin:4px auto 0;background:var(--muted);box-shadow:0 0 0 3px var(--bg);position:relative;z-index:1}
+  .trow.prompt .t-dot{background:var(--cyan)} .trow.assistant .t-dot{background:var(--accent2)}
+  .trow.tool .t-dot{background:var(--accent)} .trow.command .t-dot{background:#5b6472}
+  .trow.memory .t-dot{background:var(--amber)} .trow.memopen .t-dot{background:var(--green)}
+  .t-body{font-size:12.5px;line-height:1.5;color:#c7ccd6;min-width:0;word-break:break-word}
+  .t-tag{font-size:10px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-right:7px}
+  .trow.prompt .t-tag{color:var(--cyan)} .trow.assistant .t-tag{color:var(--accent2)}
+  .trow.memory .t-tag{color:var(--amber)} .trow.command .t-tag{color:var(--slate)}
+  .t-tool{font-family:var(--mono);font-weight:600;color:var(--accent)}
+  .trow.memopen .t-tool{color:var(--green)}
+  .t-tgt{font-family:var(--mono);color:#bcd0ff;word-break:break-all}
+  .t-path{font-family:var(--mono);color:#fcd34d}
+  .t-dim{color:var(--muted);font-size:11px}
+  .trow.memory{background:rgba(251,191,36,.07);border-radius:7px}
+  .trow.memopen{background:rgba(94,234,212,.06);border-radius:7px}
+  .t-res{margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--muted);
+         border-left:2px solid var(--border);padding-left:8px;white-space:pre-wrap;max-height:84px;overflow:auto}
+  .t-res.err{color:var(--red);border-color:var(--red)}
+  /* collapsible content block (tool output, long text) */
+  .blkwrap{margin-top:4px}
+  .blk{margin:0;font-size:12px;line-height:1.5;color:#c7ccd6;white-space:pre-wrap;word-break:break-word;font-family:inherit}
+  .blk.mono{font-family:var(--mono);font-size:11.5px;white-space:pre;color:#aeb6c4;
+            background:#10131a;border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+  .blk.err{color:var(--red);border-color:#5a2a2a}
+  .blk.clamp{max-height:7.6em;overflow:hidden;position:relative}
+  .blk.open{max-height:none;overflow:auto}
+  .more{margin-top:4px;background:none;border:1px solid var(--border);border-radius:5px;
+        color:var(--accent);font-size:10.5px;cursor:pointer;padding:2px 9px;font-family:system-ui}
+  .more:hover{background:var(--panel2)}
+  /* Compliance summary */
+  .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .pill{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);
+        border-radius:10px;padding:9px 14px;font-size:13px}
+  .pill .num{font-size:20px;font-family:var(--mono);font-weight:600}
+  .pill.ok .num{color:var(--green)} .pill.partial .num{color:var(--amber)}
+  .pill.missing .num{color:var(--red)} .pill.conditional .num{color:var(--slate)}
+  .pill.na .num{color:var(--muted)}
+  /* Directive cards */
+  .dir-card{display:grid;grid-template-columns:14px 1fr;gap:12px;background:var(--panel);
+            border:1px solid var(--border);border-left-width:3px;border-radius:9px;padding:12px 14px;margin:8px 0}
+  .dir-card.ok{border-left-color:var(--green)} .dir-card.partial{border-left-color:var(--amber)}
+  .dir-card.missing{border-left-color:var(--red)} .dir-card.conditional{border-left-color:var(--slate)}
+  .dir-card.na{border-left-color:var(--muted)}
+  .dot{width:12px;height:12px;border-radius:50%;margin-top:3px}
+  .dot.ok{background:var(--green)} .dot.partial{background:var(--amber)}
+  .dot.missing{background:var(--red)} .dot.conditional{background:var(--slate)} .dot.na{background:var(--muted)}
+  .dir-card .tgt{font-family:var(--mono);font-size:13px;color:#cdd6ff}
+  .dir-card .st{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-left:8px}
+  .dir-card.ok .st{color:var(--green)} .dir-card.partial .st{color:var(--amber)}
+  .dir-card.missing .st{color:var(--red)} .dir-card.conditional .st{color:var(--slate)} .dir-card.na .st{color:var(--muted)}
+  .dir-card .quote{font-size:12.5px;color:#c7ccd6;margin:5px 0;font-style:italic}
+  .dir-card .meta{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .dir-card .meta .src{font-family:var(--mono);color:#9fb0d8}
+  .tag-be{font-size:10px;background:#1f2a3d;color:#9db8ff;border-radius:4px;padding:1px 6px;margin-left:7px;font-family:var(--mono)}
+  /* Memory cascade */
+  .casc{position:relative}
+  .mnode{border-left:2px solid var(--border);margin:6px 0;padding:2px 0 2px 14px}
+  .mnode .dirpath{font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:5px}
+  .mnode .dirpath b{color:#bcd0ff}
+  .mfile{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin:5px 0}
+  .mfile .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .mfile .fname{font-family:var(--mono);font-size:12.5px;color:#e6e9ef}
+  .mtype{font-size:10px;border-radius:4px;padding:1px 6px;background:#283042;color:var(--muted);font-family:var(--mono)}
+  .mfile .ds{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+  .mfile .d{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .mfile .d .mini{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .mini.ok{background:var(--green)} .mini.partial{background:var(--amber)}
+  .mini.missing{background:var(--red)} .mini.conditional{background:var(--slate)} .mini.na{background:var(--muted)}
+  .mfile .d .dt{font-family:var(--mono);color:#9fb0d8}
+  details.content{margin-top:7px}
+  details.content summary{cursor:pointer;font-size:11px;color:var(--accent);user-select:none}
+  details.content pre{background:#10131a;border:1px solid var(--border);border-radius:6px;
+        padding:8px 10px;margin:6px 0 0;font-size:11.5px;white-space:pre-wrap;color:#c7ccd6;font-family:var(--mono);line-height:1.45}
+  /* Activity (secondary) */
+  details.activity{border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-top:8px}
+  details.activity>summary{cursor:pointer;padding:13px 16px;font-size:13px;font-weight:600;user-select:none}
+  details.activity>summary .hint{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  .act-body{padding:6px 16px 16px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:6px 0 16px}
+  .card{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .card .k{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  .card .v{font-size:17px;margin-top:4px;font-family:var(--mono)}
+  h3{font-size:12px;color:var(--slate);text-transform:uppercase;letter-spacing:.4px;margin:16px 0 7px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td{padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+  .mono{font-family:var(--mono)}
+  pre.cmd{background:#10131a;border:1px solid var(--border);border-radius:6px;padding:7px 9px;margin:4px 0;
+          font-size:11.5px;overflow-x:auto;white-space:pre-wrap;font-family:var(--mono)}
+  pre.cmd .ts{color:var(--muted)}
+  .tl{padding-left:6px}
+  .ev{position:relative;padding:5px 0 5px 14px;border-left:2px solid var(--border);font-size:12px}
+  .ev::before{content:"";position:absolute;left:-5px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .ev.prompt::before{background:var(--cyan)} .ev.assistant::before{background:var(--accent2)}
+  .ev.tool::before{background:var(--accent)} .ev.command::before{background:#5b6472}
+  .ev .ts{font-family:var(--mono);color:var(--muted);font-size:10.5px;margin-left:7px}
+  .ev .tn{font-family:var(--mono);font-weight:600}
+  .ev .body{color:#c7ccd6;margin-top:2px;word-break:break-word}
+  .ev .tgt{font-family:var(--mono);color:#bcd0ff;word-break:break-all}
+  .chip{font-size:9.5px;padding:1px 5px;border-radius:4px;font-family:var(--mono);margin-left:6px}
+  .chip.edit{background:#3a2a1a;color:var(--amber)} .chip.err{background:#3a1c1c;color:var(--red)}
+  .foot{color:var(--muted);font-size:12px;border-top:1px solid var(--border);padding-top:14px;margin-top:26px;line-height:1.6}
+  .foot code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-family:var(--mono)}
+  .none{color:var(--muted);font-size:12.5px;font-style:italic}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <h1>Memory &amp; Compliance Analyzer<small>Claude Code + Codex transcripts · local</small></h1>
+    <div class="ctl"><select id="project"></select></div>
+    <div class="sessions" id="sessions"></div>
+  </aside>
+  <main class="main" id="main"><div class="empty">← Select a project &amp; session</div></main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const STL = {ok:"satisfied", partial:"partial", missing:"NOT satisfied", conditional:"conditional", na:"n/a"};
+let cur = {project:null, session:null};
+
+async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+async function loadProjects(){
+  const ps = await jget("/api/projects");
+  const sel = $("#project");
+  sel.innerHTML = '<option value="">— Select project —</option>' +
+    ps.map(p=>`<option value="${esc(p.dir)}">${(p.source==="codex"?"⬡ codex · ":"")}${esc(p.label)} (${p.session_count})</option>`).join("");
+  sel.onchange = ()=>{ cur.project = sel.value; cur.session = null; setHash(); loadSessions(); };
+  await restoreFromHash();
+}
+
+/* keep project+session in the URL hash so a refresh stays on the same view */
+function setHash(){
+  let h = cur.project ? encodeURIComponent(cur.project) : "";
+  if(cur.project && cur.session) h += "/" + encodeURIComponent(cur.session);
+  history.replaceState(null, "", h ? "#"+h : location.pathname + location.search);
+}
+async function restoreFromHash(){
+  const parts = location.hash.slice(1).split("/");
+  if(!parts[0]) return;
+  const proj = decodeURIComponent(parts[0]);
+  const sess = parts[1] ? decodeURIComponent(parts[1]) : null;
+  const sel = $("#project");
+  if(![...sel.options].some(o => o.value === proj)) return;  // project gone
+  sel.value = proj; cur.project = proj;
+  await loadSessions();
+  if(sess){
+    cur.session = sess;
+    const el = $(`.sess[data-id="${sess}"]`);
+    if(el){
+      document.querySelectorAll(".sess").forEach(x=>x.classList.remove("active"));
+      el.classList.add("active"); el.scrollIntoView({block:"nearest"});
+    }
+    await loadSession();
+  }
+}
+
+async function loadSessions(){
+  const box = $("#sessions"); box.innerHTML = "";
+  if(!cur.project) return;
+  const ss = await jget(`/api/projects/${encodeURIComponent(cur.project)}/sessions`);
+  box.innerHTML = ss.map(s=>`
+    <div class="sess" data-id="${esc(s.id)}">
+      <div class="id">${esc(s.id.slice(0,18))}…</div>
+      <div class="pr">${esc(s.first_prompt||"(no prompt)")}</div>
+      <div class="mt"><span class="badge">${esc(s.mtime_str)}</span><span class="badge">${s.size_kb} KB</span>
+        ${s.git_branch?`<span class="badge">⎇ ${esc(s.git_branch)}</span>`:""}</div>
+    </div>`).join("");
+  box.querySelectorAll(".sess").forEach(el=>{
+    el.onclick = ()=>{ box.querySelectorAll(".sess").forEach(x=>x.classList.remove("active"));
+      el.classList.add("active"); cur.session = el.dataset.id; setHash(); loadSession(); };
+  });
+}
+
+async function loadSession(){
+  $("#main").innerHTML = '<div class="loading">Analyzing…</div>';
+  render(await jget(`/api/projects/${encodeURIComponent(cur.project)}/sessions/${encodeURIComponent(cur.session)}`));
+}
+
+function render(d){
+  const m = d.meta;
+  const head = `<div class="shead">
+    <div class="id"><span class="srcbadge ${esc(m.source)}">${esc(m.source)}</span> ${esc(m.id)}</div>
+    <div class="sub">${esc(m.cwd)}${m.git_branch?` · ⎇ ${esc(m.git_branch)}`:""}${m.models.length?` · ${esc(m.models.join(", "))}`:""} · ${esc(m.start)}–${esc(m.end)} (${esc(m.duration||"–")})</div>
+  </div>`;
+
+  $("#main").innerHTML = head + overview(d) + timelineSection(d) +
+    compliancePanel(d.compliance) + memoryCascade(d.injected_memory, d.compliance) +
+    rawDetails(d) + footer();
+}
+
+/* ---- 0. Session overview (metrics, tokens, tool breakdown) ---- */
+function overview(d){
+  const s = d.stats, t = d.tokens;
+  const card = (k,v) => `<div class="ocard"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const metrics = [
+    card("Duration", esc(d.meta.duration||"–")),
+    card("API turns", s.api_turns),
+    card("Tool calls", s.tool_calls + (s.tool_errors?` <span class="err">${s.tool_errors}⚠</span>`:"")),
+    card("Thinking", s.thinking_blocks),
+    card("Prompts", s.prompts),
+    card("Subagents", s.subagents),
+    card("MCP calls", s.mcp_calls),
+    card("Files read", s.files_read),
+    card("Files edited", s.files_edited),
+    card("Bash cmds", s.bash_commands),
+    card("Memory files", s.memory_files),
+  ].join("");
+  const toks = [
+    card("Output", fmt(t.output)+' <small>tok</small>'),
+    card("Input (fresh)", fmt(t.input)+' <small>tok</small>'),
+    card("Cache write", fmt(t.cache_write)+' <small>tok</small>'),
+    card("Cache read", fmt(t.cache_read)+' <small>tok</small>'),
+    card("Total input", fmt(s.total_input_tokens)+' <small>tok</small>'),
+    card("Cache hit", Math.round(s.cache_hit_rate*100)+'%'),
+    d.cost ? card("Est. cost", '$'+d.cost.usd) : "",
+  ].join("");
+  const subs = (s.subagent_list && s.subagent_list.length)
+    ? `<h3>Subagents (${s.subagent_list.length})</h3><div class="bars">` +
+      s.subagent_list.map(x=>`<div class="bar"><div class="lbl">${esc(x.type||"agent")}</div><div style="color:#c7ccd6">${esc(x.label)}</div><div></div></div>`).join("") + `</div>`
+    : "";
+  const max = Math.max(1, ...s.tool_breakdown.map(b => b.count));
+  const bars = s.tool_breakdown.length ? s.tool_breakdown.map(b => `
+    <div class="bar">
+      <div class="lbl" title="${esc(b.tool)}">${esc(b.tool)}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(b.count/max*100)}%"></div></div>
+      <div class="c">${b.count}${b.errors?` <span class="e">${b.errors}⚠</span>`:""}</div>
+    </div>`).join("") : `<div class="none">–</div>`;
+  return sec("Session overview", d.meta.events,
+    `<div class="ov-cards">${metrics}</div>
+     <h3>Tokens</h3><div class="ov-cards">${toks}</div>
+     <h3>Tool calls by type</h3><div class="bars">${bars}</div>${subs}`);
+}
+
+/* ---- 1. Compliance ---- */
+function compliancePanel(comp){
+  if(!comp.length)
+    return sec("Instruction compliance", 0,
+      `<div class="none">No checkable "read/follow file" instructions found in the injected memory files.</div>`);
+  const order = ["missing","partial","conditional","ok","na"];
+  const cnt = {}; comp.forEach(c=>cnt[c.status]=(cnt[c.status]||0)+1);
+  const pills = order.filter(s=>cnt[s]).map(s=>
+    `<div class="pill ${s}"><span class="num">${cnt[s]}</span> ${STL[s]}</div>`).join("");
+  const cards = [...comp].sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status)).map(c=>`
+    <div class="dir-card ${c.status}">
+      <div class="dot ${c.status}"></div>
+      <div>
+        <div><span class="tgt">${esc(c.target)}</span>${c.before_edit?`<span class="tag-be">before edit</span>`:""}<span class="st">${STL[c.status]||c.status}</span></div>
+        <div class="quote">“${esc(c.directive)}”</div>
+        <div class="meta">Source: <span class="src">${esc(c.memory_file)}</span><br>${esc(c.note)}</div>
+      </div>
+    </div>`).join("");
+  return sec("Instruction compliance", comp.length, `<div class="sum">${pills}</div>${cards}`);
+}
+
+/* ---- 2. Memory injection as a directory cascade ---- */
+function memoryCascade(mem, comp){
+  if(!mem.length)
+    return sec("Injected memory files", 0,
+      `<div class="none">No nested CLAUDE.md/AGENTS.md injected (Claude did not work in any subdirectory containing memory files).</div>`);
+  // compliance lookup per (memory_file -> [directives])
+  const byFile = {};
+  comp.forEach(c=>{ (byFile[c.memory_file] ||= []).push(c); });
+  // group by directory, sort by depth
+  const dirs = {};
+  mem.forEach(m=>{ (dirs[m.dir] ||= []).push(m); });
+  const sortedDirs = Object.keys(dirs).sort((a,b)=> a.split("/").length-b.split("/").length || a.localeCompare(b));
+  const blocks = sortedDirs.map(dir=>{
+    const depth = dir? dir.split("/").length : 0;
+    const segs = dir.split("/");
+    const label = `<span>${esc(segs.slice(0,-1).join("/"))}${segs.length>1?"/":""}</span><b>${esc(segs[segs.length-1]||dir)}</b>`;
+    const files = dirs[dir].map(f=>{
+      const dirvs = (byFile[f.path]||[]).map(c=>
+        `<div class="d"><span class="mini ${c.status}"></span><span class="dt">${esc(c.target)}</span>— ${esc(STL[c.status])}</div>`).join("");
+      return `<div class="mfile">
+        <div class="top"><span class="fname">${esc(f.name)}</span><span class="mtype">${esc(f.mtype||"Memory")}</span>
+          <span style="color:var(--muted);font-size:11px">${f.chars} chars · ${esc(f.ts)}</span></div>
+        ${dirvs?`<div class="ds">${dirvs}</div>`:""}
+        <details class="content"><summary>Content</summary><pre>${esc(f.text.trim()||"(empty)")}</pre></details>
+      </div>`;
+    }).join("");
+    return `<div class="mnode" style="margin-left:${depth*15}px">
+      <div class="dirpath">${label||"(root)"}</div>${files}</div>`;
+  }).join("");
+  return sec("Injected memory files · directory cascade", mem.length, `<div class="casc">${blocks}</div>`);
+}
+
+/* ---- 3. Timeline (primary — chronological stream, memory woven in) ---- */
+const _MEMRE = /(README|AGENTS|CLAUDE)\.md/i;
+const _EDIT_TOOLS = ["Edit","Write","MultiEdit","NotebookEdit","apply_patch"];
+
+function timelineSection(d){
+  if(!d.timeline.length) return sec("Timeline", 0, `<div class="none">No events.</div>`);
+  const agent = d.meta.source === "codex" ? "codex" : "claude";
+  return sec("Timeline · chronological", d.timeline.length,
+    `<div class="tl2">${d.timeline.map(ev=>tlRow(ev, agent)).join("")}</div>`);
+}
+
+// collapsible block: shows the first lines of long/multiline content, expandable.
+function clampBlock(text, mono, err){
+  const lines = text.split("\n");
+  const long = lines.length > 6 || text.length > 360;
+  const cls = "blk" + (mono?" mono":"") + (err?" err":"") + (long?" clamp":"");
+  let html = `<pre class="${cls}">${esc(text)}</pre>`;
+  if(long){
+    const lbl = `▼ show ${lines.length} lines`;
+    html += `<button class="more" onclick="var p=this.previousElementSibling,o=p.classList.toggle('open');this.textContent=o?'▲ show less':'${lbl}'">${lbl}</button>`;
+  }
+  return `<div class="blkwrap">${html}</div>`;
+}
+
+function tlRow(ev, agent){
+  const ts = `<span class="t-ts">${esc(ev.ts)}</span><span class="t-dot"></span>`;
+  if(ev.kind==="memory")
+    return `<div class="trow memory">${ts}<div class="t-body"><span class="t-tag">📎 memory loaded</span>
+      <span class="t-path">${esc(ev.path)}</span> <span class="t-dim">${ev.mtype} · ${ev.chars} chars</span></div></div>`;
+  if(ev.kind==="prompt")
+    return `<div class="trow prompt">${ts}<div class="t-body"><span class="t-tag">prompt</span>${esc(ev.text)}</div></div>`;
+  if(ev.kind==="assistant"){
+    const long = ev.text.includes("\n") || ev.text.length > 240;
+    const body = long ? clampBlock(ev.text, false, false) : esc(ev.text);
+    return `<div class="trow assistant">${ts}<div class="t-body"><span class="t-tag">${esc(agent||"agent")}</span>${body}</div></div>`;
+  }
+  if(ev.kind==="command")
+    return `<div class="trow command">${ts}<div class="t-body"><span class="t-tag">command</span><span class="mono">${esc(ev.text)}</span></div></div>`;
+  // tool
+  const isMem = _MEMRE.test(ev.target||"");
+  const edit = _EDIT_TOOLS.includes(ev.tool);
+  let chips = edit?`<span class="chip edit">edit</span>`:"";
+  if(ev.error===true) chips += `<span class="chip err">error</span>`;
+  const res = ev.result ? clampBlock(ev.result, true, ev.error===true) : "";
+  return `<div class="trow tool${isMem?" memopen":""}">${ts}<div class="t-body">
+      <span class="t-tool">${isMem?"📖 ":""}${esc(ev.tool)}</span>${chips}
+      <span class="t-tgt">${esc(ev.target)}</span>${ev.detail?` <span class="t-dim">— ${esc(ev.detail)}</span>`:""}${res}</div></div>`;
+}
+
+/* ---- 4. Raw details (secondary, collapsed) ---- */
+function rawDetails(d){
+  const fileTbl=(arr)=>arr.length?`<table>${arr.map(f=>`<tr><td class="mono">${esc(f.path)}</td><td style="text-align:right;color:var(--muted);width:50px">${f.count>1?"×"+f.count:""}</td></tr>`).join("")}</table>`:`<div class="none">–</div>`;
+  const cmds = d.commands.length?d.commands.map(c=>`<pre class="cmd"><span class="ts">[${esc(c.ts)}] </span>${esc(c.command)}</pre>`).join(""):`<div class="none">–</div>`;
+  return `<details class="activity"><summary>Raw details<span class="hint">— file lists &amp; full commands</span></summary>
+    <div class="act-body">
+      <h3>Edited files (${d.files.edited.length})</h3>${fileTbl(d.files.edited)}
+      <h3>Read files (${d.files.read.length})</h3>${fileTbl(d.files.read)}
+      <h3>Commands (${d.commands.length})</h3>${cmds}
+    </div></details>`;
+}
+
+function footer(){
+  return `<div class="foot">
+    <b>Focus of this tool:</b> memory injection (which nested CLAUDE.md/AGENTS.md were loaded per directory)
+    and instruction compliance. For full, multi-provider transcript viewing (timeline, tokens, Codex/Gemini)
+    use <code>claude-code-history-viewer</code> (CCHV) as a complement.
+  </div>`;
+}
+
+function sec(title,n,inner){ return `<section><h2>${esc(title)} <span class="n">${n}</span></h2>${inner}</section>`; }
+function fmt(n){ return (n||0).toLocaleString("en-US"); }
+loadProjects();
+</script>
+</body>
+</html>

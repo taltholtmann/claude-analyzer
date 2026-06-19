@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""
+Headless report for a Claude Code or Codex transcript — for agents and pipelines
+that consume the analysis without the web UI.
+
+Usage:
+  python cli.py <transcript.jsonl> [--json]   # analyze one file (source auto-detected)
+  python cli.py --list                        # list all projects + sessions (JSON)
+
+Default output is Markdown (compliance + memory first); --json emits the full
+result object (the same schema the HTTP API returns).
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+import parser as P
+import codex as CX
+import sources
+
+
+def detect_source(path: str) -> str:
+    """Sniff the first lines: Codex rollouts carry session_meta/response_item."""
+    with open(path, encoding="utf-8") as fh:
+        for i, line in enumerate(fh):
+            if i > 5:
+                break
+            try:
+                t = json.loads(line).get("type", "")
+            except json.JSONDecodeError:
+                continue
+            if t in ("session_meta", "response_item", "turn_context", "event_msg"):
+                return "codex"
+            if t in ("user", "assistant", "attachment", "system"):
+                return "claude"
+    return "claude"
+
+
+def analyze_file(path: str) -> dict:
+    # on-host run: transcript cwd == real path, so no host/mount mapping needed
+    if detect_source(path) == "codex":
+        return CX.analyze_codex(path)
+    return P.analyze(path)
+
+
+def to_markdown(d: dict) -> str:
+    m, s, t = d["meta"], d["stats"], d["tokens"]
+    L = []
+    L.append(f"# Session {m['id']}  ({m['source']})")
+    L.append(f"- cwd: `{m['cwd']}`" + (f" · branch: `{m['git_branch']}`" if m['git_branch'] else ""))
+    L.append(f"- model: {', '.join(m['models']) or '—'} · {m['start']}–{m['end']} ({m['duration'] or '–'})")
+    if d.get("cost"):
+        L.append(f"- est. cost: **${d['cost']['usd']}** ({d['cost']['note']})")
+    L.append("")
+    L.append("## Overview")
+    L.append(f"- api_turns={s['api_turns']} · tool_calls={s['tool_calls']} "
+             f"(errors={s['tool_errors']}) · thinking={s['thinking_blocks']} · "
+             f"subagents={s['subagents']} · mcp_calls={s['mcp_calls']}")
+    L.append(f"- files read={s['files_read']} · edited={s['files_edited']} · "
+             f"bash={s['bash_commands']} · memory_files={s['memory_files']}")
+    L.append(f"- tokens: output={t['output']:,} input={t['input']:,} "
+             f"cache_read={t['cache_read']:,} cache_write={t['cache_write']:,} "
+             f"(cache hit {round(s['cache_hit_rate']*100)}%)")
+    breakdown = ", ".join(
+        f"{b['tool']}×{b['count']}" + (f"(⚠{b['errors']})" if b['errors'] else "")
+        for b in s["tool_breakdown"]) or "—"
+    L.append(f"- tool breakdown: {breakdown}")
+    L.append("")
+
+    L.append("## Instruction compliance")
+    if not d["compliance"]:
+        L.append("_No checkable read/follow-file directives in injected memory._")
+    else:
+        order = {"missing": 0, "partial": 1, "conditional": 2, "ok": 3, "na": 4}
+        for c in sorted(d["compliance"], key=lambda c: order.get(c["status"], 9)):
+            be = " [before edit]" if c["before_edit"] else ""
+            L.append(f"- **{c['status'].upper()}** `{c['target']}`{be} — "
+                     f"\"{c['directive']}\" (from `{c['memory_file']}`) — {c['note']}")
+    L.append("")
+
+    L.append("## Injected memory (directory cascade)")
+    if not d["injected_memory"]:
+        L.append("_No nested CLAUDE.md/AGENTS.md injected._")
+    else:
+        for mem in sorted(d["injected_memory"], key=lambda x: x["path"]):
+            L.append(f"- `{mem['path']}` ({mem['mtype']}, {mem['chars']} chars)")
+    L.append("")
+
+    if s["subagent_list"]:
+        L.append("## Subagents")
+        for sa in s["subagent_list"]:
+            L.append(f"- {sa['label']}" + (f" ({sa['type']})" if sa['type'] else ""))
+        L.append("")
+    return "\n".join(L)
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if "--list" in args:
+        out = []
+        for proj in sources.list_projects():
+            out.append({**proj, "sessions": [s["id"] for s in sources.list_sessions(proj["dir"])]})
+        print(json.dumps(out, indent=2))
+        return
+    if not args:
+        print(__doc__)
+        sys.exit(1)
+    path = args[0]
+    if not os.path.isfile(path):
+        sys.exit(f"not a file: {path}")
+    result = analyze_file(path)
+    if "--json" in args:
+        print(json.dumps(result, indent=2))
+    else:
+        print(to_markdown(result))
+
+
+if __name__ == "__main__":
+    main()
