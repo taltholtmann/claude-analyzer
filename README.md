@@ -1,146 +1,80 @@
-# Memory & Compliance Analyzer (Claude Code + Codex)
+# 🔍 Memory & Compliance Analyzer
 
-> ⚠️ **Draft / beta — not extensively tested.** This is an early proof-of-concept built
-> in a single session. It works on the transcripts it was developed against, but it has
-> no automated test suite, the transcript formats are reverse-engineered and may change,
-> and the compliance heuristics are best-effort (expect false positives/negatives). Run
-> it locally, read the code before trusting the output, and treat results as indicative,
-> not authoritative. Issues and PRs welcome.
+**See what your coding agent actually did — which `CLAUDE.md` / `AGENTS.md` it loaded, and whether it followed them.**
 
-A local web tool with a **sharp focus**: it answers two questions that no other
-transcript viewer does:
+A local tool that reads **Claude Code** and **OpenAI Codex** session transcripts and answers the questions other transcript viewers don't:
 
-1. **Memory injection** — Which (nested) `CLAUDE.md` / `AGENTS.md` files were loaded into
-   context, and from which directory? Shown as a **directory cascade** (indented by depth),
-   with each file's content.
-2. **Instruction compliance** — Were the "read/follow file X" instructions declared in
-   injected memory files actually honored (e.g. *"Read README.md before editing this
-   subtree"*, *"follow `../Core/AGENTS.md`"*)? Traffic-light status **satisfied / partial /
-   not satisfied / conditional**, each with evidence.
+- 🧠 **Memory injection** — which (nested) `CLAUDE.md` / `AGENTS.md` were loaded into context, *from which directory*, and *at what point* in the run.
+- ✅ **Instruction compliance** — were the “read/follow file X” rules in those files actually honored? (e.g. *“Read README.md before editing this subtree”*) — with a traffic-light verdict and evidence.
+- ⏱️ **A real chronological timeline** — prompts, tool calls, shell commands, **skill** uses, and memory injections woven together in the order they happened, with collapsible output.
+- 📊 **Session overview** — tokens (incl. cache-hit rate), estimated USD cost, tool-call breakdown, thinking blocks, subagents, skills.
 
-It also reports a **session overview** (duration, API turns, tool-call breakdown with
-errors, thinking blocks, subagents, **skills used**, MCP calls), **token usage** (incl.
-cache hit rate) and an **estimated USD cost** for Claude models. Skill invocations are
-detected per source — Claude `Skill` tool calls, and Codex reading a `skills/<name>/SKILL.md`
-— and are woven into the timeline.
+Use it three ways: a **web UI**, an **MCP server** (so any agent session can analyze itself), or a **CLI** (Markdown/JSON for pipelines).
 
-## Supported agents
+> ⚠️ **Draft / beta — not extensively tested.** Built in a few sessions as a proof of concept. No automated test suite; transcript formats are reverse-engineered and may change; compliance heuristics are best-effort (expect occasional false positives/negatives). Run it locally, skim the code, and treat results as indicative — not authoritative. Issues & PRs welcome.
 
-| Agent | Transcripts | Memory file |
-|---|---|---|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` | nested `CLAUDE.md` / `AGENTS.md` (injected as `nested_memory` attachments) |
-| **OpenAI Codex CLI** | `~/.codex/sessions/**/rollout-*.jsonl` | `AGENTS.md` (injected as `# AGENTS.md instructions for <dir>` user messages) |
+---
 
-Both are normalized to **one schema** and run through the **same** compliance/memory
-analysis. In the UI a `codex` / `claude` badge marks the source. Cost estimation only
-applies to Claude models (Codex uses OpenAI models → cost shown as n/a).
+## 🚀 Install — just ask your agent
 
-Web UI: pick a project + session by clicking.
+The fastest way: paste this into **Claude Code** (or Codex) and let it do the setup.
 
-## Scope — when to use this vs. something else
-
-For **generic** transcript viewing (full timeline, token charts, tool-call details,
-multi-provider incl. Codex/Gemini/Antigravity) mature tools already exist — most notably
-**[`claude-code-history-viewer`](https://github.com/jhlee0409/claude-code-history-viewer) (CCHV)**,
-plus `claude-code-trace`, `claude-code-log`, `simonw/claude-code-transcripts`.
-
-This tool deliberately does **not** expand the generic part (it is present only as a
-secondary, collapsed "Activity" section). Its unique value is the **memory/compliance
-niche** — exactly what the others do not show. CCHV & co. are the recommended complement
-for everything else.
-
-> Also complementary to Arize/Phoenix tracing: Phoenix streams the live run to a collector
-> but sees **no** injected memory files (only tool calls / files). This analyzer works
-> directly on the transcripts and surfaces the injection itself.
-
-## Compliance logic (short)
-
-From every injected memory file, "read/follow `<file>`" directives are extracted
-(verbs: read/follow/see/consult/review/check). Each directive is judged as:
-
-- **satisfied** — the target file was read (Read tool **or** `cat`/`head`/… via Bash), or
-  is itself loaded as memory (nested-injected / root memory). For *"before editing"*
-  directives, additionally: before the first edit.
-- **partial** — read only *after* the edit, or only a same-named file in a *different*
-  directory was read (not the requested one).
-- **conditional** — directive carries a condition (*"For PHP files, …"*); only relevant if
-  the condition held — not hard-judged.
-- **not satisfied** — the target file exists in the repo but was never read.
-
-## Run (Docker)
-
-```bash
-cd ~/code/claude-analyzer
-docker compose up -d --build
-# open the UI:
-open http://localhost:8420
+```
+Install the claude-analyzer tool for me.
+1. Clone https://github.com/taltholtmann/claude-analyzer into ~/code (or my usual code dir).
+2. Read its README.
+3. Create a Python venv and install requirements.
+4. Register its MCP server with Claude Code at user scope so any session can use it.
+5. Optionally start the web UI via docker compose and tell me the URL.
+Report back what you set up and how I use it.
 ```
 
-Mounted read-only:
-- `~/.claude/projects` → Claude Code transcripts
-- `~/.codex/sessions` → Codex CLI transcripts
-- `~/code` → for file/README existence checks (compliance)
+That’s it — the agent has everything it needs in this README to finish the setup.
 
-> If your repos don't live under `~/code`, edit the `${HOME}/code` volume + `HOST_CODE_DIR`
-> in `docker-compose.yml` to point at your code root — otherwise compliance can't find the
-> referenced files on disk and will report them as `n/a`. (The CLI and MCP server use the
-> real paths directly and aren't affected.)
+---
 
-Stop: `docker compose down`.
-
-## Run (without Docker, local)
+## 🛠️ Manual install
 
 ```bash
-cd ~/code/claude-analyzer
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-PROJECTS_ROOT="$HOME/.claude/projects" \
-  HOST_CODE_DIR="$HOME/code" MOUNT_CODE_DIR="$HOME/code" \
-  python app/server.py
-# http://localhost:8420
-```
-
-## Headless / AI consumption (no UI)
-
-The tool is fully usable without the browser — for agents, CI, and scripts:
-
-**HTTP JSON API** (same data the UI uses):
-```bash
-curl localhost:8420/api/projects
-curl "localhost:8420/api/projects/<project>/sessions"
-curl "localhost:8420/api/projects/<project>/sessions/<id>" | jq '.compliance, .injected_memory, .cost'
-```
-
-**CLI** — point it at any transcript file (source auto-detected), get a Markdown report
-(compliance + memory first) or the full JSON:
-```bash
-python app/cli.py ~/.claude/projects/<proj>/<id>.jsonl            # Markdown report
-python app/cli.py ~/.codex/sessions/2026/06/19/rollout-*.jsonl    # Codex works too
-python app/cli.py <transcript.jsonl> --json                       # full result object
-python app/cli.py --list                                          # all projects + sessions
-```
-The Markdown report is designed to be dropped straight into an LLM context.
-
-## Use from other Claude Code / Codex sessions (MCP server)
-
-An **MCP server** exposes the analysis as tools, so any other agent session can
-introspect agent behavior live — e.g. *"analyze my last session: were the AGENTS.md
-instructions followed?"*
-
-Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`
-(returns meta / stats incl. skills+tools / cost / **compliance** / **injected_memory** /
-files; the large timeline is omitted unless `include_timeline=true`).
-
-**Setup** (one-time):
-```bash
+git clone https://github.com/taltholtmann/claude-analyzer.git ~/code/claude-analyzer
 cd ~/code/claude-analyzer
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-# register with Claude Code (user scope = available in all your projects):
+```
+
+Then pick the surface(s) you want below.
+
+---
+
+## 1. Web UI
+
+```bash
+docker compose up -d --build      # → http://localhost:8420
+# stop: docker compose down
+```
+
+Pick a project + session in the sidebar (sorted by last activity) → the timeline, compliance, and overview render instantly. The URL keeps your selection, so a refresh stays put and links are shareable.
+
+Mounted **read-only**: `~/.claude/projects`, `~/.codex/sessions`, and `~/code` (the last is used to check whether referenced files exist on disk).
+
+> If your repos don’t live under `~/code`, edit the `${HOME}/code` volume + `HOST_CODE_DIR` in `docker-compose.yml` to point at your code root — otherwise compliance can’t find the referenced files and reports them as `n/a`. (The CLI and MCP server use real paths and aren’t affected.)
+
+No Docker? Run it directly:
+```bash
+.venv/bin/python app/server.py   # http://localhost:8420
+```
+
+## 2. MCP server — let any agent session analyze itself
+
+Exposes the analysis as tools so a running agent can introspect its own (or any past) session live — *“did I follow the AGENTS.md instructions in my last session?”*
+
+```bash
 claude mcp add --scope user claude-analyzer -- \
   ~/code/claude-analyzer/.venv/bin/python ~/code/claude-analyzer/app/mcp_server.py
 ```
 
-Equivalent JSON (`.mcp.json` for project scope, committed):
+Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`. They return meta, stats (skills/tools/subagents/tokens), cost, **compliance**, and **injected_memory**; the large timeline is omitted unless `include_timeline=true`. Verify with `claude mcp list` or `/mcp`.
+
+Equivalent JSON (`.mcp.json`, project scope):
 ```json
 { "mcpServers": { "claude-analyzer": {
   "command": "/abs/path/claude-analyzer/.venv/bin/python",
@@ -148,12 +82,45 @@ Equivalent JSON (`.mcp.json` for project scope, committed):
 }}}
 ```
 
-Verify with `claude mcp list` or `/mcp` in a session. The server reads transcripts from
-`~/.claude/projects` and `~/.codex/sessions` (override via `PROJECTS_ROOT` / `CODEX_ROOT`).
+> **Trust model:** local single-user stdio server. Any session you register it with can read the content of all your other sessions (prompts, commands, injected memory). Fine for introspecting your own work; don’t register it on a shared home directory.
 
-> **Trust model:** local single-user stdio server. Any session you register it with can
-> read the content of all your other sessions (prompts, commands, injected memory). Fine
-> for introspecting your own work; don't register it on a shared home directory.
+## 3. CLI — headless report
+
+```bash
+.venv/bin/python app/cli.py <transcript.jsonl>          # Markdown report (source auto-detected)
+.venv/bin/python app/cli.py <transcript.jsonl> --json   # full result object
+.venv/bin/python app/cli.py --list                      # all projects + sessions
+```
+
+The Markdown report leads with compliance + memory and is built to drop straight into an LLM context. Also available over HTTP while the web UI runs: `curl localhost:8420/api/projects/<project>/sessions/<id> | jq .compliance`.
+
+---
+
+## What it detects, per agent
+
+| | Claude Code | OpenAI Codex |
+|---|---|---|
+| Transcripts | `~/.claude/projects/**/*.jsonl` | `~/.codex/sessions/**/rollout-*.jsonl` |
+| Memory files | nested `CLAUDE.md` / `AGENTS.md` (injected `nested_memory` attachments) | `AGENTS.md` (injected `# AGENTS.md instructions for <dir>` messages) |
+| Skill use | `Skill` tool calls | reading a `skills/<name>/SKILL.md` |
+| Cost estimate | ✅ (Claude model pricing) | — (OpenAI models → shown as n/a) |
+
+Both sources are normalized to **one schema** and run through the **same** analysis. A `claude` / `codex` badge marks the source.
+
+## How compliance is judged
+
+From each injected memory file, “read/follow `<file>`” directives are extracted (verbs: read/follow/see/consult/review/check). Each is rated:
+
+- **satisfied** — the target was read (Read tool **or** `cat`/`head`/… via shell), or is itself loaded as memory. For *“before editing”* directives, additionally: before the first edit.
+- **partial** — read only *after* the edit, or only a same-named file in a *different* directory was read.
+- **conditional** — scoped to a context (*“For PHP files, …”*, *“Tests:”*); only relevant if that area was touched — not hard-judged.
+- **not satisfied** — the target exists in the repo but was never read.
+
+## Scope — and what this is *not*
+
+For **generic** transcript viewing (full timeline, token charts, multi-provider) mature tools already exist — e.g. [`claude-code-history-viewer`](https://github.com/jhlee0409/claude-code-history-viewer). This tool deliberately stays in the **memory + compliance niche** they don’t cover; that generic view is here only as a secondary, collapsed “Raw details” section.
+
+---
 
 ## Architecture
 
@@ -170,56 +137,25 @@ app/
 Dockerfile · docker-compose.yml · requirements.txt · LICENSE
 ```
 
-### API (for scripting)
+Stack: Python stdlib + Flask + the `mcp` SDK, vanilla JS, no build step. Adding a third agent = one new reader module that normalizes into the shared schema via `parser.finalize()`.
+
+### HTTP API
 
 | Endpoint | returns |
 |---|---|
-| `GET /api/projects` | all project dirs + session count |
-| `GET /api/projects/<project>/sessions` | sessions of a project (newest first) |
-| `GET /api/projects/<project>/sessions/<id>` | full analysis as JSON |
+| `GET /api/projects` | all projects + session counts |
+| `GET /api/projects/<project>/sessions` | sessions (newest first) |
+| `GET /api/projects/<project>/sessions/<id>` | full analysis JSON |
 
-Example:
-```bash
-curl localhost:8420/api/projects
-curl "localhost:8420/api/projects/<project>/sessions/<id>" | jq '.compliance, .injected_memory'
-```
+## Known follow-ups
 
-Response fields: `meta` (incl. `source`), `stats` (counts: api_turns, tool_calls/errors,
-tool_breakdown, thinking_blocks, subagents + subagent_list, skills + skill_list, mcp_calls,
-cache_hit_rate, …), `tokens`, `cost` (USD estimate or `null`), `compliance` (checked directives),
-`injected_memory` (nested memory with `dir`/`text`/`file_directives`), `files`, `commands`,
-`timeline`.
+Good first contributions, not blockers:
+- Extract the shared core (`finalize` / `_compliance` / directive helpers) from `parser.py` into a neutral `core.py`.
+- Type the reader→`finalize` boundary with a `TypedDict`.
+- Add a third reader (e.g. Gemini CLI).
+- Codex skill detection is heuristic (SKILL.md reads); Claude’s is exact (Skill tool).
+- `pricing.py` rates are hardcoded — refresh periodically.
 
-## Known follow-ups (from the code review)
+## License
 
-Applied: collision-safe Codex project ids, rollout-scan caching, loopback-only
-binding, path-containment checks, conditional-directive heuristic, several bug fixes.
-
-Deferred (good first contributions, not blockers):
-- Extract the shared analysis core (`finalize` / `_compliance` / directive helpers)
-  out of `parser.py` into a neutral `core.py`; today `codex.py` imports `parser`'s
-  underscore-prefixed helpers.
-- Type the reader→`finalize` boundary with a `TypedDict`/dataclass instead of 15 kwargs.
-- Move `detect_source()` into `sources.py` so a third reader (e.g. Gemini) registers
-  its format in one place.
-- `pricing.py` rates are hardcoded — note a "last verified" date and refresh periodically.
-
-## How the transcript fields are interpreted
-
-- **Tool calls:** `assistant` message → `content[]` with `type:"tool_use"` (name, input).
-- **Results:** the following `user` message → `tool_result` (matched by `tool_use_id`,
-  `is_error`).
-- **Injected memory:** `type:"attachment"` with `attachment.type == "nested_memory"`
-  (path in `displayPath`, content in `content.content`).
-- **Repo path:** taken from the session's `cwd` field (not guessed from the dir name).
-- **Tokens:** `message.usage` (input/output/cache_read/cache_creation).
-
-**Codex** (`response_item` / `event_msg`): tool calls are `function_call` (shell →
-`Shell`, `apply_patch` → edits); results are `function_call_output` (`exited with code N`
-→ error); thinking is `reasoning`; tokens come from the cumulative `token_count` event;
-injected memory is the `# AGENTS.md instructions for <dir>` user message.
-
-> **Compliance heuristic:** a "read X" directive is treated as **conditional** (not a
-> miss) when it is scoped to a context — `for …` / `when …` / `if …`, or an area marker
-> like `PHP/server code:` / `Tests:` — since it only applies when that area is touched.
-> Unconditional "read X before editing" directives are checked strictly.
+MIT — see [LICENSE](LICENSE).
