@@ -116,11 +116,42 @@ python app/cli.py --list                                          # all projects
 ```
 The Markdown report is designed to be dropped straight into an LLM context.
 
+## Use from other Claude Code / Codex sessions (MCP server)
+
+An **MCP server** exposes the analysis as tools, so any other agent session can
+introspect agent behavior live — e.g. *"analyze my last session: were the AGENTS.md
+instructions followed?"*
+
+Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`
+(returns meta / stats incl. skills+tools / cost / **compliance** / **injected_memory** /
+files; the large timeline is omitted unless `include_timeline=true`).
+
+**Setup** (one-time):
+```bash
+cd ~/code/claude-analyzer
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# register with Claude Code (user scope = available in all your projects):
+claude mcp add --scope user claude-analyzer -- \
+  ~/code/claude-analyzer/.venv/bin/python ~/code/claude-analyzer/app/mcp_server.py
+```
+
+Equivalent JSON (`.mcp.json` for project scope, committed):
+```json
+{ "mcpServers": { "claude-analyzer": {
+  "command": "/abs/path/claude-analyzer/.venv/bin/python",
+  "args": ["/abs/path/claude-analyzer/app/mcp_server.py"]
+}}}
+```
+
+Verify with `claude mcp list` or `/mcp` in a session. The server reads transcripts from
+`~/.claude/projects` and `~/.codex/sessions` (override via `PROJECTS_ROOT` / `CODEX_ROOT`).
+
 ## Architecture
 
 ```
 app/
 ├── server.py              # Flask: JSON API + serves the web UI
+├── mcp_server.py          # MCP (stdio) server — same analysis as tools for other sessions
 ├── sources.py             # unified project/session discovery + routing (Claude + Codex)
 ├── parser.py              # Claude reader + shared finalize/compliance/stats core
 ├── codex.py               # Codex rollout reader → normalizes to the shared schema
