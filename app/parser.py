@@ -226,7 +226,8 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                 })
                 seq += 1
                 timeline.append({"seq": seq, "ts": _hms(ts), "kind": "memory",
-                                 "path": disp, "mtype": mtype, "chars": len(text)})
+                                 "path": disp, "mtype": mtype, "chars": len(text),
+                                 "text": _clip(text, 4000)})
             continue
 
         msg = o.get("message")

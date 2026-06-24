@@ -79,6 +79,7 @@
   .trow.memopen .t-tool{color:var(--green)}
   .t-tgt{font-family:var(--mono);color:#bcd0ff;word-break:break-all}
   .t-path{font-family:var(--mono);color:#fcd34d}
+  .recon{color:var(--amber)}
   .t-dim{color:var(--muted);font-size:11px}
   .trow.memory{background:rgba(251,191,36,.07);border-radius:7px}
   .trow.memopen{background:rgba(94,234,212,.06);border-radius:7px}
@@ -254,24 +255,9 @@ function render(d){
     <div class="sub">${esc(m.cwd)}${m.git_branch?` · ⎇ ${esc(m.git_branch)}`:""}${m.models.length?` · ${esc(m.models.join(", "))}`:""} · ${esc(m.start)}–${esc(m.end)} (${esc(m.duration||"–")})</div>
   </div>`;
 
-  $("#main").innerHTML = head + overview(d) + initialContext(d) + timelineSection(d) +
+  $("#main").innerHTML = head + overview(d) + timelineSection(d) +
     compliancePanel(d.compliance) + memoryCascade(d.injected_memory, d.compliance) +
     rawDetails(d) + footer();
-}
-
-/* ---- Initial context (reconstructed root/user memory loaded at session start) ---- */
-function initialContext(d){
-  const items = d.initial_context || [];
-  if(!items.length) return "";
-  const rows = items.map(x=>`
-    <div class="mfile">
-      <div class="top"><span class="mtype">${esc(x.scope)}</span>
-        <span class="fname">${esc(x.path)}</span>
-        <span style="color:var(--muted);font-size:11px">${x.chars} chars</span></div>
-      <details class="content"><summary>Content</summary><pre>${esc((x.text||"").trim()||"(empty)")}</pre></details>
-    </div>`).join("");
-  return sec("Initial context · loaded at session start", items.length,
-    `<div class="none" style="margin-bottom:9px">Reconstructed from disk — Claude Code does not store root/user memory in the transcript, so this shows the current file contents at these well-known locations.</div>${rows}`);
 }
 
 /* ---- 0. Session overview (metrics, tokens, tool breakdown) ---- */
@@ -403,7 +389,7 @@ function tlRow(ev, agent){
   const ts = `<span class="t-ts">${esc(ev.ts)}</span><span class="t-dot"></span>`;
   if(ev.kind==="memory")
     return `<div class="trow memory">${ts}<div class="t-body"><span class="t-tag">📎 ${ev.initial?"initial memory":"memory loaded"}</span>
-      <span class="t-path">${esc(ev.path)}</span> <span class="t-dim">${esc(ev.mtype)} · ${ev.chars} chars</span></div></div>`;
+      <span class="t-path">${esc(ev.path)}</span> <span class="t-dim">${esc(ev.mtype)} · ${ev.chars} chars${ev.initial?' · <span class="recon">⚠ current disk content, not as it was during the session</span>':""}</span>${ev.text?clampBlock(ev.text,false,false):""}</div></div>`;
   if(ev.kind==="prompt")
     return `<div class="trow prompt">${ts}<div class="t-body"><span class="t-tag">prompt</span>${esc(ev.text)}</div></div>`;
   if(ev.kind==="assistant"){

@@ -105,7 +105,8 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
                     })
                     seq += 1
                     timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "memory",
-                                     "path": disp, "mtype": "AGENTS.md", "chars": len(txt)})
+                                     "path": disp, "mtype": "AGENTS.md", "chars": len(txt),
+                                     "text": P._clip(txt, 4000)})
                 elif not txt.startswith("<"):  # skip env/instruction XML blocks
                     seq += 1
                     timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "prompt",

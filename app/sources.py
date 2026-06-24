@@ -146,7 +146,8 @@ def analyze(project: str, session: str) -> dict | None:
                 # renders consistently with the nested, on-demand memory events
                 ts0 = result["meta"].get("start", "")
                 intro = [{"seq": 0, "ts": ts0, "kind": "memory", "path": x["path"],
-                          "mtype": x["scope"], "chars": x["chars"], "initial": True}
+                          "mtype": x["scope"], "chars": x["chars"], "initial": True,
+                          "text": x["text"]}
                          for x in ic]
                 result["timeline"] = intro + result.get("timeline", [])
                 result["meta"]["events"] = len(result["timeline"])
