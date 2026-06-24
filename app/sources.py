@@ -152,13 +152,29 @@ def _map_cwd(path: str) -> str:
     return path
 
 
-def _read_clip(real_path: str, n: int = 4000) -> str | None:
+def _read_full(real_path: str) -> str | None:
     try:
         with open(real_path, encoding="utf-8", errors="replace") as fh:
-            t = fh.read(n + 1)
+            return fh.read()
     except OSError:
         return None
-    return t if len(t) <= n else t[:n].rstrip() + "\n…"
+
+
+def _clip(text: str, n: int = 4000) -> str:
+    return text if len(text) <= n else text[:n].rstrip() + "\n…"
+
+
+def _import_allowed(key: str, base_dir: str) -> bool:
+    """
+    Confine `@`-import targets: only within the importing file's own subtree, or
+    within the memory homes (~/.claude, ~/.codex). Blocks traversal and exfiltration
+    of unrelated files (`@/etc/passwd`, `@~/.ssh/id_rsa`, `@../../.env`) whose content
+    would otherwise be returned over the API / MCP.
+    """
+    roots = [os.path.realpath(base_dir),
+             os.path.realpath(os.path.dirname(CLAUDE_ROOT)),
+             os.path.realpath(os.path.dirname(CODEX_ROOT))]
+    return any(r and (key == r or key.startswith(r + os.sep)) for r in roots)
 
 
 def _initial_context(meta: dict, project: str, injected: list) -> list[dict]:
@@ -185,15 +201,16 @@ def _initial_context(meta: dict, project: str, injected: list) -> list[dict]:
     for scope, label, real, rel in candidates:
         if not real or (rel and rel in injected_paths):
             continue
-        txt = _read_clip(real)
-        if txt is None:
+        full = _read_full(real)
+        if full is None:
             continue
         seen.add(os.path.realpath(real))
-        out.append({"scope": scope, "path": label, "chars": len(txt), "text": txt})
-        pending.append((txt, os.path.dirname(real)))
+        # scan the FULL file for imports; clip only what we display, report true size
+        out.append({"scope": scope, "path": label, "chars": len(full), "text": _clip(full)})
+        pending.append((full, os.path.dirname(real)))
     # resolve @-imports (Claude pulls the imported file's content into context)
-    for txt, base_dir in pending:
-        _resolve_imports(txt, base_dir, seen, out)
+    for full, base_dir in pending:
+        _resolve_imports(full, base_dir, seen, out)
     return out
 
 
@@ -224,11 +241,11 @@ def _resolve_imports(text: str, base_dir: str, seen: set, out: list, depth: int 
             else:
                 real = os.path.normpath(os.path.join(base_dir, raw))
             key = os.path.realpath(real)
-            if key in seen:
+            if key in seen or not _import_allowed(key, base_dir):
                 continue
             seen.add(key)
-            txt = _read_clip(real)
-            if txt is None:
+            full = _read_full(real)
+            if full is None:
                 continue
-            out.append({"scope": "Import (@)", "path": raw, "chars": len(txt), "text": txt})
-            _resolve_imports(txt, os.path.dirname(real), seen, out, depth + 1)
+            out.append({"scope": "Import (@)", "path": raw, "chars": len(full), "text": _clip(full)})
+            _resolve_imports(full, os.path.dirname(real), seen, out, depth + 1)
