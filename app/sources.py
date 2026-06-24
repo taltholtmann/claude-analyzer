@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from datetime import datetime
 
@@ -125,17 +126,109 @@ def latest_session(project: str = "") -> tuple[str, str] | None:
 
 def analyze(project: str, session: str) -> dict | None:
     try:
+        result = None
         if project.startswith(_CODEX_PREFIX):
             for r in _codex_rollouts():
                 if r["id"] == session and _codex_project_id(r["cwd"]) == project:
-                    return CX.analyze_codex(r["path"], HOST_CODE, MOUNT_CODE)
-            return None
-        path = os.path.join(CLAUDE_ROOT, project, f"{session}.jsonl")
-        # containment: the resolved file must stay inside CLAUDE_ROOT
-        if not os.path.realpath(path).startswith(os.path.realpath(CLAUDE_ROOT) + os.sep):
-            return None
-        if not os.path.isfile(path):
-            return None
-        return P.analyze(path, HOST_CODE, MOUNT_CODE)
+                    result = CX.analyze_codex(r["path"], HOST_CODE, MOUNT_CODE)
+                    break
+        else:
+            path = os.path.join(CLAUDE_ROOT, project, f"{session}.jsonl")
+            # containment: the resolved file must stay inside CLAUDE_ROOT
+            if os.path.realpath(path).startswith(os.path.realpath(CLAUDE_ROOT) + os.sep) \
+                    and os.path.isfile(path):
+                result = P.analyze(path, HOST_CODE, MOUNT_CODE)
+        if result is not None:
+            result["initial_context"] = _initial_context(
+                result["meta"], project, result["injected_memory"])
+        return result
     except OSError:
         return None
+
+
+def _map_cwd(path: str) -> str:
+    if HOST_CODE and MOUNT_CODE and path.startswith(HOST_CODE):
+        return MOUNT_CODE + path[len(HOST_CODE):]
+    return path
+
+
+def _read_clip(real_path: str, n: int = 4000) -> str | None:
+    try:
+        with open(real_path, encoding="utf-8", errors="replace") as fh:
+            t = fh.read(n + 1)
+    except OSError:
+        return None
+    return t if len(t) <= n else t[:n].rstrip() + "\n…"
+
+
+def _initial_context(meta: dict, project: str, injected: list) -> list[dict]:
+    """
+    Best-effort reconstruction of the context files loaded at session START that
+    Claude Code does NOT persist in the transcript (user `~/.claude/CLAUDE.md`, the
+    project auto-memory `MEMORY.md`, and the repo-root CLAUDE.md/AGENTS.md). Read
+    from disk now, so it reflects current file state — flagged as reconstructed.
+    Codex already persists its AGENTS.md as injected memory, so this is Claude-only.
+    """
+    if meta.get("source") != "claude":
+        return []
+    cwd = meta.get("cwd", "")
+    base = _map_cwd(cwd) if cwd else ""
+    home_claude = os.path.dirname(CLAUDE_ROOT)  # e.g. ~/.claude
+    injected_paths = {m["path"] for m in injected}
+    candidates = [
+        ("User memory", "~/.claude/CLAUDE.md", os.path.join(home_claude, "CLAUDE.md"), None),
+        ("Auto-memory", "MEMORY.md", os.path.join(CLAUDE_ROOT, project, "memory", "MEMORY.md"), None),
+        ("Project root", "CLAUDE.md", os.path.join(base, "CLAUDE.md") if base else "", "CLAUDE.md"),
+        ("Project root", "AGENTS.md", os.path.join(base, "AGENTS.md") if base else "", "AGENTS.md"),
+    ]
+    out, seen, pending = [], set(), []
+    for scope, label, real, rel in candidates:
+        if not real or (rel and rel in injected_paths):
+            continue
+        txt = _read_clip(real)
+        if txt is None:
+            continue
+        seen.add(os.path.realpath(real))
+        out.append({"scope": scope, "path": label, "chars": len(txt), "text": txt})
+        pending.append((txt, os.path.dirname(real)))
+    # resolve @-imports (Claude pulls the imported file's content into context)
+    for txt, base_dir in pending:
+        _resolve_imports(txt, base_dir, seen, out)
+    return out
+
+
+# `@path` in a CLAUDE.md/AGENTS.md imports that file's content (recursively).
+# Match only when preceded by start/space and the target looks like a path
+# (has an extension or a slash) — excludes emails (foo@bar) and @mentions.
+_IMPORT_RE = re.compile(r"(?:^|\s)@([^\s`]+)")
+
+
+def _resolve_imports(text: str, base_dir: str, seen: set, out: list, depth: int = 0) -> None:
+    if depth > 5:
+        return
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for m in _IMPORT_RE.finditer(line):
+            raw = m.group(1).rstrip(".,;:)]}")
+            if not raw or not ("/" in raw or re.search(r"\.\w+$", raw)):
+                continue  # not a file-ish import (skip @mentions / @params)
+            if raw.startswith("~"):
+                real = os.path.expanduser(raw)
+            elif os.path.isabs(raw):
+                real = _map_cwd(raw)
+            else:
+                real = os.path.normpath(os.path.join(base_dir, raw))
+            key = os.path.realpath(real)
+            if key in seen:
+                continue
+            seen.add(key)
+            txt = _read_clip(real)
+            if txt is None:
+                continue
+            out.append({"scope": "Import (@)", "path": raw, "chars": len(txt), "text": txt})
+            _resolve_imports(txt, os.path.dirname(real), seen, out, depth + 1)

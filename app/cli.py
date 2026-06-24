@@ -42,7 +42,12 @@ def analyze_file(path: str) -> dict:
     # on-host run: transcript cwd == real path, so no host/mount mapping needed
     if detect_source(path) == "codex":
         return CX.analyze_codex(path)
-    return P.analyze(path)
+    result = P.analyze(path)
+    # attach reconstructed initial context, like sources.analyze() does for the API
+    project = os.path.basename(os.path.dirname(path))
+    result["initial_context"] = sources._initial_context(
+        result["meta"], project, result["injected_memory"])
+    return result
 
 
 def to_markdown(d: dict) -> str:
@@ -68,6 +73,12 @@ def to_markdown(d: dict) -> str:
         for b in s["tool_breakdown"]) or "—"
     L.append(f"- tool breakdown: {breakdown}")
     L.append("")
+
+    if d.get("initial_context"):
+        L.append("## Initial context (loaded at session start, reconstructed from disk)")
+        for ic in d["initial_context"]:
+            L.append(f"- [{ic['scope']}] `{ic['path']}` ({ic['chars']} chars)")
+        L.append("")
 
     L.append("## Instruction compliance")
     if not d["compliance"]:

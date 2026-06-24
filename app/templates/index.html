@@ -254,9 +254,24 @@ function render(d){
     <div class="sub">${esc(m.cwd)}${m.git_branch?` · ⎇ ${esc(m.git_branch)}`:""}${m.models.length?` · ${esc(m.models.join(", "))}`:""} · ${esc(m.start)}–${esc(m.end)} (${esc(m.duration||"–")})</div>
   </div>`;
 
-  $("#main").innerHTML = head + overview(d) + timelineSection(d) +
+  $("#main").innerHTML = head + overview(d) + initialContext(d) + timelineSection(d) +
     compliancePanel(d.compliance) + memoryCascade(d.injected_memory, d.compliance) +
     rawDetails(d) + footer();
+}
+
+/* ---- Initial context (reconstructed root/user memory loaded at session start) ---- */
+function initialContext(d){
+  const items = d.initial_context || [];
+  if(!items.length) return "";
+  const rows = items.map(x=>`
+    <div class="mfile">
+      <div class="top"><span class="mtype">${esc(x.scope)}</span>
+        <span class="fname">${esc(x.path)}</span>
+        <span style="color:var(--muted);font-size:11px">${x.chars} chars</span></div>
+      <details class="content"><summary>Content</summary><pre>${esc((x.text||"").trim()||"(empty)")}</pre></details>
+    </div>`).join("");
+  return sec("Initial context · loaded at session start", items.length,
+    `<div class="none" style="margin-bottom:9px">Reconstructed from disk — Claude Code does not store root/user memory in the transcript, so this shows the current file contents at these well-known locations.</div>${rows}`);
 }
 
 /* ---- 0. Session overview (metrics, tokens, tool breakdown) ---- */

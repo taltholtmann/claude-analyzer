@@ -4,7 +4,7 @@
 
 A local tool that reads **Claude Code** and **OpenAI Codex** session transcripts and answers the questions other transcript viewers don't:
 
-- 🧠 **Memory injection** — which (nested) `CLAUDE.md` / `AGENTS.md` were loaded into context, *from which directory*, and *at what point* in the run.
+- 🧠 **Memory injection** — which (nested) `CLAUDE.md` / `AGENTS.md` were loaded into context, *from which directory*, and *at what point* in the run. Also the **initial context** loaded at session start (root + user `CLAUDE.md`, auto-memory, with `@imports` resolved recursively) — reconstructed from disk, since Claude Code doesn't persist it in the transcript.
 - ✅ **Instruction compliance** — were the “read/follow file X” rules in those files actually honored? (e.g. *“Read README.md before editing this subtree”*) — with a traffic-light verdict and evidence.
 - ⏱️ **A real chronological timeline** — prompts, tool calls, shell commands, **skill** uses, and memory injections woven together in the order they happened, with collapsible output.
 - 📊 **Session overview** — tokens (incl. cache-hit rate), estimated USD cost, tool-call breakdown, thinking blocks, subagents, skills.

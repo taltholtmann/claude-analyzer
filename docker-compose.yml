@@ -7,16 +7,16 @@ services:
       # so the UI must not be reachable from other hosts on the network
       - "127.0.0.1:8420:8420"
     environment:
-      PROJECTS_ROOT: /data/projects
-      CODEX_ROOT: /data/codex-sessions
+      PROJECTS_ROOT: /data/claude/projects
+      CODEX_ROOT: /data/codex/sessions
       # Host path as it appears in the transcript `cwd` fields (for file/README checks):
       HOST_CODE_DIR: ${HOME}/code
       MOUNT_CODE_DIR: /data/code
     volumes:
-      # Claude Code transcripts (read-only)
-      - ${HOME}/.claude/projects:/data/projects:ro
-      # Codex CLI rollout transcripts (read-only)
-      - ${HOME}/.codex/sessions:/data/codex-sessions:ro
+      # Claude home (transcripts under projects/ + the user-level CLAUDE.md, read-only)
+      - ${HOME}/.claude:/data/claude:ro
+      # Codex home (rollouts under sessions/ + user-level AGENTS.md, read-only)
+      - ${HOME}/.codex:/data/codex:ro
       # Repos for file/README existence checks (read-only)
       - ${HOME}/code:/data/code:ro
     restart: unless-stopped
