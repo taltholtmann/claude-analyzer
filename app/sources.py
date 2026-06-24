@@ -108,6 +108,21 @@ def list_sessions(project: str) -> list[dict]:
     return P.list_sessions(CLAUDE_ROOT, project)
 
 
+def latest_session(project: str = "") -> tuple[str, str] | None:
+    """(project_dir, session_id) of the most recently active session, or None.
+
+    Within `project` if given, else across all projects. Cheap: list_sessions is
+    already sorted newest-first, so only each project's head is compared.
+    """
+    best = None
+    projects = [{"dir": project}] if project else list_projects()
+    for p in projects:
+        sess = list_sessions(p["dir"])
+        if sess and (best is None or sess[0]["mtime"] > best[0]):
+            best = (sess[0]["mtime"], p["dir"], sess[0]["id"])
+    return (best[1], best[2]) if best else None
+
+
 def analyze(project: str, session: str) -> dict | None:
     try:
         if project.startswith(_CODEX_PREFIX):

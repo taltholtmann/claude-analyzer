@@ -23,7 +23,9 @@ import parser as P
 
 # header that prefixes a Codex-injected AGENTS.md user message
 _AGENTS_HDR = re.compile(r"^#\s*AGENTS\.md instructions for (.+?)\s*$", re.MULTILINE)
-# shell programs that read a file's content (Codex commonly uses `sed -n`/`cat`)
+# shell programs that read a file's content. Intentionally broader than
+# parser.READ_CMDS (includes `sed`/`nl`): Codex commonly reads files via `sed -n`,
+# whereas in Claude `sed`/`grep` would cause false-positive "read" matches.
 _READ_BINS = ("cat", "sed", "head", "tail", "less", "more", "bat", "view", "nl")
 _SHELL_CALLS = ("exec_command", "shell", "local_shell", "container.exec", "bash")
 
@@ -140,6 +142,7 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
                 sk = re.search(r"skills/([\w./-]+?)/SKILL\.md", cmd)
                 if sk:
                     ev["skill"] = sk.group(1)
+                    ev["target"] = sk.group(1)  # mirror Claude's Skill-tool target
             elif name == "apply_patch":
                 paths = _patch_paths(args, cwd)
                 ev["tool"] = "apply_patch"

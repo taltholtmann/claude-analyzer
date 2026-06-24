@@ -327,10 +327,13 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
     )
 
 
-def finalize(*, source, session_id, cwd, branch, version, models, timeline,
-             read_ev, edit_ev, commands, injected, tok, api_turns,
-             thinking_blocks, ts_all, files_read, files_edited,
-             host_code, mount_code) -> dict:
+def finalize(*, source: str, session_id: str, cwd: str, branch: str, version: str,
+             models: set[str], timeline: list[dict],
+             read_ev: list[tuple[int, str]], edit_ev: list[tuple[int, str]],
+             commands: list[dict], injected: list[dict], tok: dict[str, int],
+             api_turns: int, thinking_blocks: int, ts_all: list[str],
+             files_read: list[str], files_edited: list[str],
+             host_code: str, mount_code: str) -> dict:
     """Build the canonical result dict from collected primitives.
 
     Shared by the Claude reader (above) and the Codex reader (codex.py) so both

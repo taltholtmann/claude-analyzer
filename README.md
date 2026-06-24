@@ -81,6 +81,11 @@ Mounted read-only:
 - `~/.codex/sessions` → Codex CLI transcripts
 - `~/code` → for file/README existence checks (compliance)
 
+> If your repos don't live under `~/code`, edit the `${HOME}/code` volume + `HOST_CODE_DIR`
+> in `docker-compose.yml` to point at your code root — otherwise compliance can't find the
+> referenced files on disk and will report them as `n/a`. (The CLI and MCP server use the
+> real paths directly and aren't affected.)
+
 Stop: `docker compose down`.
 
 ## Run (without Docker, local)
@@ -145,6 +150,10 @@ Equivalent JSON (`.mcp.json` for project scope, committed):
 
 Verify with `claude mcp list` or `/mcp` in a session. The server reads transcripts from
 `~/.claude/projects` and `~/.codex/sessions` (override via `PROJECTS_ROOT` / `CODEX_ROOT`).
+
+> **Trust model:** local single-user stdio server. Any session you register it with can
+> read the content of all your other sessions (prompts, commands, injected memory). Fine
+> for introspecting your own work; don't register it on a shared home directory.
 
 ## Architecture
 
