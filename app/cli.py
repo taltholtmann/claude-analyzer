@@ -57,7 +57,7 @@ def to_markdown(d: dict) -> str:
     L.append("## Overview")
     L.append(f"- api_turns={s['api_turns']} · tool_calls={s['tool_calls']} "
              f"(errors={s['tool_errors']}) · thinking={s['thinking_blocks']} · "
-             f"subagents={s['subagents']} · mcp_calls={s['mcp_calls']}")
+             f"subagents={s['subagents']} · skills={s.get('skills', 0)} · mcp_calls={s['mcp_calls']}")
     L.append(f"- files read={s['files_read']} · edited={s['files_edited']} · "
              f"bash={s['bash_commands']} · memory_files={s['memory_files']}")
     L.append(f"- tokens: output={t['output']:,} input={t['input']:,} "
@@ -88,6 +88,11 @@ def to_markdown(d: dict) -> str:
             L.append(f"- `{mem['path']}` ({mem['mtype']}, {mem['chars']} chars)")
     L.append("")
 
+    if s.get("skill_list"):
+        L.append("## Skills used")
+        for sk in s["skill_list"]:
+            L.append(f"- {sk['name']}" + (f" ×{sk['count']}" if sk['count'] > 1 else ""))
+        L.append("")
     if s["subagent_list"]:
         L.append("## Subagents")
         for sa in s["subagent_list"]:

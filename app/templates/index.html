@@ -67,6 +67,10 @@
   .trow.prompt .t-dot{background:var(--cyan)} .trow.assistant .t-dot{background:var(--accent2)}
   .trow.tool .t-dot{background:var(--accent)} .trow.command .t-dot{background:#5b6472}
   .trow.memory .t-dot{background:var(--amber)} .trow.memopen .t-dot{background:var(--green)}
+  .trow.skill .t-dot{background:#e879f9}
+  .trow.skill{background:rgba(232,121,249,.07);border-radius:7px}
+  .trow.skill .t-tag{color:#e879f9}
+  .t-skill{font-family:var(--mono);color:#f0abfc;font-weight:600}
   .t-body{font-size:12.5px;line-height:1.5;color:#c7ccd6;min-width:0;word-break:break-word}
   .t-tag{font-size:10px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-right:7px}
   .trow.prompt .t-tag{color:var(--cyan)} .trow.assistant .t-tag{color:var(--accent2)}
@@ -266,6 +270,7 @@ function overview(d){
     card("Thinking", s.thinking_blocks),
     card("Prompts", s.prompts),
     card("Subagents", s.subagents),
+    card("Skills", s.skills||0),
     card("MCP calls", s.mcp_calls),
     card("Files read", s.files_read),
     card("Files edited", s.files_edited),
@@ -285,6 +290,10 @@ function overview(d){
     ? `<h3>Subagents (${s.subagent_list.length})</h3><div class="bars">` +
       s.subagent_list.map(x=>`<div class="bar"><div class="lbl">${esc(x.type||"agent")}</div><div style="color:#c7ccd6">${esc(x.label)}</div><div></div></div>`).join("") + `</div>`
     : "";
+  const skillsBlk = (s.skill_list && s.skill_list.length)
+    ? `<h3>Skills used (${s.skills})</h3><div class="bars">` +
+      s.skill_list.map(x=>`<div class="bar"><div class="lbl">🧩 ${esc(x.name)}</div><div style="color:var(--muted)">${x.count>1?"×"+x.count:""}</div><div></div></div>`).join("") + `</div>`
+    : "";
   const max = Math.max(1, ...s.tool_breakdown.map(b => b.count));
   const bars = s.tool_breakdown.length ? s.tool_breakdown.map(b => `
     <div class="bar">
@@ -295,7 +304,7 @@ function overview(d){
   return sec("Session overview", d.meta.events,
     `<div class="ov-cards">${metrics}</div>
      <h3>Tokens</h3><div class="ov-cards">${toks}</div>
-     <h3>Tool calls by type</h3><div class="bars">${bars}</div>${subs}`);
+     <h3>Tool calls by type</h3><div class="bars">${bars}</div>${skillsBlk}${subs}`);
 }
 
 /* ---- 1. Compliance ---- */
@@ -389,6 +398,8 @@ function tlRow(ev, agent){
   }
   if(ev.kind==="command")
     return `<div class="trow command">${ts}<div class="t-body"><span class="t-tag">command</span><span class="mono">${esc(ev.text)}</span></div></div>`;
+  if(ev.skill)
+    return `<div class="trow skill">${ts}<div class="t-body"><span class="t-tag">🧩 skill</span> <span class="t-skill">${esc(ev.skill)}</span>${ev.result?clampBlock(ev.result,false,ev.error===true):""}</div></div>`;
   // tool
   const isMem = _MEMRE.test(ev.target||"");
   const edit = _EDIT_TOOLS.includes(ev.tool);

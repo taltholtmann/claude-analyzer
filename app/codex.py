@@ -136,6 +136,10 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
                 if rp:
                     read_ev.append((seq, rp))
                     files_read.append(rp)
+                # skill usage: Codex "uses" a skill by reading its SKILL.md
+                sk = re.search(r"skills/([\w./-]+?)/SKILL\.md", cmd)
+                if sk:
+                    ev["skill"] = sk.group(1)
             elif name == "apply_patch":
                 paths = _patch_paths(args, cwd)
                 ev["tool"] = "apply_patch"

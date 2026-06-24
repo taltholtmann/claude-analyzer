@@ -19,8 +19,10 @@ transcript viewer does:
    not satisfied / conditional**, each with evidence.
 
 It also reports a **session overview** (duration, API turns, tool-call breakdown with
-errors, thinking blocks, subagents, MCP calls), **token usage** (incl. cache hit rate) and
-an **estimated USD cost** for Claude models.
+errors, thinking blocks, subagents, **skills used**, MCP calls), **token usage** (incl.
+cache hit rate) and an **estimated USD cost** for Claude models. Skill invocations are
+detected per source — Claude `Skill` tool calls, and Codex reading a `skills/<name>/SKILL.md`
+— and are woven into the timeline.
 
 ## Supported agents
 
@@ -143,8 +145,8 @@ curl "localhost:8420/api/projects/<project>/sessions/<id>" | jq '.compliance, .i
 ```
 
 Response fields: `meta` (incl. `source`), `stats` (counts: api_turns, tool_calls/errors,
-tool_breakdown, thinking_blocks, subagents + subagent_list, mcp_calls, cache_hit_rate, …),
-`tokens`, `cost` (USD estimate or `null`), `compliance` (checked directives),
+tool_breakdown, thinking_blocks, subagents + subagent_list, skills + skill_list, mcp_calls,
+cache_hit_rate, …), `tokens`, `cost` (USD estimate or `null`), `compliance` (checked directives),
 `injected_memory` (nested memory with `dir`/`text`/`file_directives`), `files`, `commands`,
 `timeline`.
 

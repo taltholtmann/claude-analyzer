@@ -292,6 +292,11 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                     ev = {"seq": seq, "ts": _hms(ts), "kind": "tool",
                           "tool": name, "target": target, "detail": detail,
                           "error": None, "result": ""}
+                    if name == "Skill":  # skill invocation — input.skill holds the name
+                        sk = inp.get("skill") or inp.get("command") or ""
+                        if sk:
+                            ev["skill"] = sk
+                            ev["target"] = sk
                     timeline.append(ev)
                     if b.get("id"):
                         tool_calls[b["id"]] = ev
@@ -350,6 +355,8 @@ def finalize(*, source, session_id, cwd, branch, version, models, timeline,
         {"label": e.get("target", ""), "type": e.get("detail", "")}
         for e in timeline if e["kind"] == "tool" and e["tool"] == "Task"
     ]
+    skill_counts = Counter(e["skill"] for e in timeline if e.get("skill"))
+    skill_list = [{"name": n, "count": c} for n, c in skill_counts.most_common()]
     total_input = tok["input"] + tok["cache_read"] + tok["cache_write"]
     stats = {
         "prompts": sum(1 for e in timeline if e["kind"] == "prompt"),
@@ -363,6 +370,8 @@ def finalize(*, source, session_id, cwd, branch, version, models, timeline,
         "bash_commands": len(commands),
         "subagents": len(subagents),
         "subagent_list": subagents,
+        "skills": sum(skill_counts.values()),
+        "skill_list": skill_list,
         "mcp_calls": sum(v for k, v in tool_counts.items() if k.startswith("mcp__")),
         "files_read": len(_counted(files_read)),
         "files_edited": len(_counted(files_edited)),
