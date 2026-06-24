@@ -139,8 +139,17 @@ def analyze(project: str, session: str) -> dict | None:
                     and os.path.isfile(path):
                 result = P.analyze(path, HOST_CODE, MOUNT_CODE)
         if result is not None:
-            result["initial_context"] = _initial_context(
-                result["meta"], project, result["injected_memory"])
+            ic = _initial_context(result["meta"], project, result["injected_memory"])
+            result["initial_context"] = ic
+            if ic:
+                # weave the start-of-session memory into the timeline (first), so it
+                # renders consistently with the nested, on-demand memory events
+                ts0 = result["meta"].get("start", "")
+                intro = [{"seq": 0, "ts": ts0, "kind": "memory", "path": x["path"],
+                          "mtype": x["scope"], "chars": x["chars"], "initial": True}
+                         for x in ic]
+                result["timeline"] = intro + result.get("timeline", [])
+                result["meta"]["events"] = len(result["timeline"])
         return result
     except OSError:
         return None

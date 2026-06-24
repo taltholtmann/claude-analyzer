@@ -402,8 +402,8 @@ function clampBlock(text, mono, err){
 function tlRow(ev, agent){
   const ts = `<span class="t-ts">${esc(ev.ts)}</span><span class="t-dot"></span>`;
   if(ev.kind==="memory")
-    return `<div class="trow memory">${ts}<div class="t-body"><span class="t-tag">📎 memory loaded</span>
-      <span class="t-path">${esc(ev.path)}</span> <span class="t-dim">${ev.mtype} · ${ev.chars} chars</span></div></div>`;
+    return `<div class="trow memory">${ts}<div class="t-body"><span class="t-tag">📎 ${ev.initial?"initial memory":"memory loaded"}</span>
+      <span class="t-path">${esc(ev.path)}</span> <span class="t-dim">${esc(ev.mtype)} · ${ev.chars} chars</span></div></div>`;
   if(ev.kind==="prompt")
     return `<div class="trow prompt">${ts}<div class="t-body"><span class="t-tag">prompt</span>${esc(ev.text)}</div></div>`;
   if(ev.kind==="assistant"){
