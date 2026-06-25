@@ -178,6 +178,66 @@ def compliance_overview(project: str = "", cwd: str = "", max_sessions: int = 20
     return {"sessions_analyzed": analyzed, "directives": items}
 
 
+def _raw_path(pdir: str, sid: str) -> str | None:
+    if pdir.startswith(_CODEX_PREFIX):
+        for r in _codex_rollouts():
+            if r["id"] == sid and _codex_project_id(r["cwd"]) == pdir:
+                return r["path"]
+        return None
+    return os.path.join(CLAUDE_ROOT, pdir, f"{sid}.jsonl")
+
+
+def search_sessions(query: str, project: str = "", cwd: str = "", kind: str = "",
+                    limit: int = 20, max_sessions: int = 100) -> dict:
+    """Full-text search across sessions. Cheap raw-substring pre-filter per file,
+    then structured event-level matches with a snippet. Newest sessions first."""
+    q = (query or "").strip().lower()
+    if not q:
+        return {"error": "empty query"}
+    limit = max(1, min(limit, 50))
+    max_sessions = max(1, min(max_sessions, 200))
+    sess = []
+    for pdir in _resolve_projects(project, cwd):
+        for s in list_sessions(pdir):
+            sess.append((s["mtime"], pdir, s["id"]))
+    sess.sort(key=lambda x: x[0], reverse=True)
+    sess = sess[:max_sessions]
+
+    matches, scanned = [], 0
+    for _, pdir, sid in sess:
+        path = _raw_path(pdir, sid)
+        if not path:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                raw = fh.read()
+        except OSError:
+            continue
+        scanned += 1
+        if q not in raw.lower():
+            continue
+        r = analyze(pdir, sid, full=True)
+        if not r:
+            continue
+        for ev in r.get("timeline", []):
+            if kind and ev.get("kind") != kind:
+                continue
+            text = ev.get("text") or ev.get("target") or ""
+            i = text.lower().find(q)
+            if i < 0:
+                continue
+            snip = text[max(0, i - 60):i + len(q) + 80].replace("\n", " ")
+            matches.append({
+                "project": pdir, "session_id": sid, "seq": ev.get("seq"),
+                "kind": ev.get("kind"), "ts": ev.get("ts"),
+                "snippet": ("…" if i > 60 else "") + snip + "…"})
+            if len(matches) >= limit:
+                return {"query": query, "sessions_scanned": scanned,
+                        "matches": matches, "truncated": True}
+    return {"query": query, "sessions_scanned": scanned,
+            "matches": matches, "truncated": False}
+
+
 def analyze(project: str, session: str, full: bool = False) -> dict | None:
     try:
         result = None

@@ -145,6 +145,24 @@ def get_session_text(project: str, session_id: str, seq: int | None = None,
 
 
 @mcp.tool()
+def search(query: str, project: str = "", cwd: str = "", kind: str = "",
+           limit: int = 20) -> dict:
+    """Full-text search across sessions — find where something happened (an error,
+    a file path, a decision, a phrase) without knowing which session.
+
+    Scoped to `cwd` (a repo path) or `project`, else all. Optional `kind` filter
+    ('prompt' | 'assistant' | 'tool' | 'memory' | 'command'). Returns matches with
+    {project, session_id, seq, kind, ts, snippet}; read the full text of a hit with
+    get_session_text(project, session_id, seq=...). `limit` capped at 50.
+    """
+    if project and _safe(project) is None:
+        return {"error": "invalid project id"}
+    if not (query or "").strip():
+        return {"error": "empty query"}
+    return sources.search_sessions(query, project, cwd, kind, limit)
+
+
+@mcp.tool()
 def compliance_summary(project: str = "", cwd: str = "", max_sessions: int = 20) -> dict:
     """Cross-session instruction compliance — the "are our AGENTS.md/CLAUDE.md rules
     actually followed over time?" view.
