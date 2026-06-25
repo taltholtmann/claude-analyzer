@@ -217,7 +217,7 @@ async function restoreFromHash(){
   await loadSessions();
   if(sess){
     cur.session = sess;
-    const el = $(`.sess[data-id="${sess}"]`);
+    const el = $(`.sess[data-id="${CSS.escape(sess)}"]`);
     if(el){
       document.querySelectorAll(".sess").forEach(x=>x.classList.remove("active"));
       el.classList.add("active"); el.scrollIntoView({block:"nearest"});
@@ -318,8 +318,8 @@ function compliancePanel(comp){
   const pills = order.filter(s=>cnt[s]).map(s=>
     `<div class="pill ${s}"><span class="num">${cnt[s]}</span> ${STL[s]}</div>`).join("");
   const cards = [...comp].sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status)).map(c=>`
-    <div class="dir-card ${c.status}">
-      <div class="dot ${c.status}"></div>
+    <div class="dir-card ${esc(c.status)}">
+      <div class="dot ${esc(c.status)}"></div>
       <div>
         <div><span class="tgt">${esc(c.target)}</span>${c.before_edit?`<span class="tag-be">before edit</span>`:""}<span class="st">${STL[c.status]||c.status}</span></div>
         <div class="quote">“${esc(c.directive)}”</div>
@@ -347,7 +347,7 @@ function memoryCascade(mem, comp){
     const label = `<span>${esc(segs.slice(0,-1).join("/"))}${segs.length>1?"/":""}</span><b>${esc(segs[segs.length-1]||dir)}</b>`;
     const files = dirs[dir].map(f=>{
       const dirvs = (byFile[f.path]||[]).map(c=>
-        `<div class="d"><span class="mini ${c.status}"></span><span class="dt">${esc(c.target)}</span>— ${esc(STL[c.status])}</div>`).join("");
+        `<div class="d"><span class="mini ${esc(c.status)}"></span><span class="dt">${esc(c.target)}</span>— ${esc(STL[c.status])}</div>`).join("");
       return `<div class="mfile">
         <div class="top"><span class="fname">${esc(f.name)}</span><span class="mtype">${esc(f.mtype||"Memory")}</span>
           <span style="color:var(--muted);font-size:11px">${f.chars} chars · ${esc(f.ts)}</span></div>

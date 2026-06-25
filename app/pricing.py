@@ -18,9 +18,11 @@ CACHE_READ_FACTOR = 0.1
 CACHE_WRITE_FACTOR = 1.25
 
 
-def _rate(models: list[str]):
+def _rate(models: list[str]) -> tuple[float, float] | None:
     """Return (input_per_mtok, output_per_mtok) for the first known model, or None."""
     for m in models:
+        if not isinstance(m, str):
+            continue
         for key, inp, out in _PRICES:
             if key in m:
                 return inp, out

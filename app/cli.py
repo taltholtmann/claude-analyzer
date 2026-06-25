@@ -28,9 +28,10 @@ def detect_source(path: str) -> str:
             if i > 5:
                 break
             try:
-                t = json.loads(line).get("type", "")
+                obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            t = obj.get("type", "") if isinstance(obj, dict) else ""
             if t in ("session_meta", "response_item", "turn_context", "event_msg"):
                 return "codex"
             if t in ("user", "assistant", "attachment", "system"):
@@ -126,7 +127,10 @@ def main() -> None:
     path = args[0]
     if not os.path.isfile(path):
         sys.exit(f"not a file: {path}")
-    result = analyze_file(path)
+    try:
+        result = analyze_file(path)
+    except OSError as e:
+        sys.exit(f"cannot read {path}: {e}")
     if "--json" in args:
         print(json.dumps(result, indent=2))
     else:

@@ -162,6 +162,22 @@ Good first contributions, not blockers:
 - Codex skill detection is heuristic (SKILL.md reads); Claude’s is exact (Skill tool).
 - `pricing.py` rates are hardcoded — refresh periodically.
 
+## Security & privacy
+
+Your transcripts contain your full conversation history — keep this local.
+
+- **Loopback only by design.** The web UI binds to `127.0.0.1`. Setting `BIND=0.0.0.0`
+  (direct run) or removing the `127.0.0.1:` prefix from the compose port mapping would
+  expose your history on the network — don't.
+- **MCP trust model.** Registering the MCP server lets any agent session you run read the
+  content of all your local sessions. Don't register it on a shared home directory, and be
+  aware a prompt-injected sub-agent could call it to read session content.
+- **Bounded file reads.** Reconstructing initial context and following `@imports` is confined
+  to the repo subtree + the memory homes, follows only text/markdown files, and rejects path
+  traversal — so a crafted `@~/.ssh/id_rsa` / `@…/settings.json` can't exfiltrate secrets.
+
+It's a draft — review the code before pointing it at sensitive projects.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

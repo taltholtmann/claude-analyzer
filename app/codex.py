@@ -38,9 +38,11 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
         for line in fh:
             if line.strip():
                 try:
-                    lines.append(json.loads(line))
+                    obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(obj, dict):  # ignore valid-JSON non-objects
+                    lines.append(obj)
 
     cwd, version = "", ""
     models: set[str] = set()
@@ -59,6 +61,8 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
     seq = 0
 
     for o in lines:
+        if not isinstance(o, dict):
+            continue
         typ = o.get("type")
         p = o.get("payload", {}) or {}
         ts = o.get("timestamp", "")

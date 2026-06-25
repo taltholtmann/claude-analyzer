@@ -66,6 +66,8 @@ def _scan_codex_rollouts() -> list[dict]:
                             o = json.loads(line)
                         except json.JSONDecodeError:
                             continue
+                        if not isinstance(o, dict):
+                            continue
                         p = o.get("payload", {}) or {}
                         if o.get("type") == "session_meta":
                             cwd = p.get("cwd", cwd) or cwd
@@ -342,6 +344,9 @@ def _initial_context(meta: dict, project: str, injected: list) -> list[dict]:
 # Match only when preceded by start/space and the target looks like a path
 # (has an extension or a slash) — excludes emails (foo@bar) and @mentions.
 _IMPORT_RE = re.compile(r"(?:^|\s)@([^\s`]+)")
+# only follow imports to text/markdown files — never .json/.jsonl/.env/keys etc.,
+# so a crafted `@~/.claude/settings.json` import can't exfiltrate secrets.
+_TEXT_EXT = (".md", ".markdown", ".txt", ".mdx", ".rst")
 
 
 def _resolve_imports(text: str, base_dir: str, seen: set, out: list, depth: int = 0) -> None:
@@ -356,8 +361,8 @@ def _resolve_imports(text: str, base_dir: str, seen: set, out: list, depth: int 
             continue
         for m in _IMPORT_RE.finditer(line):
             raw = m.group(1).rstrip(".,;:)]}")
-            if not raw or not ("/" in raw or re.search(r"\.\w+$", raw)):
-                continue  # not a file-ish import (skip @mentions / @params)
+            if not raw or not raw.lower().endswith(_TEXT_EXT):
+                continue  # only text/markdown imports (skip @mentions, secrets, binaries)
             if raw.startswith("~"):
                 real = os.path.expanduser(raw)
             elif os.path.isabs(raw):

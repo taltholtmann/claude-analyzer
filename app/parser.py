@@ -92,6 +92,8 @@ def _quick_meta(path: str) -> dict:
                     o = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if not isinstance(o, dict):
+                    continue
                 cwd = cwd or o.get("cwd", "")
                 branch = branch or o.get("gitBranch", "")
                 if not first_prompt and o.get("type") == "user":
@@ -177,9 +179,11 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
         for line in fh:
             if line.strip():
                 try:
-                    lines.append(json.loads(line))
+                    obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(obj, dict):  # ignore valid-JSON non-objects
+                    lines.append(obj)
 
     cwd = next((o.get("cwd") for o in lines if o.get("cwd")), "") or ""
     branch = next((o.get("gitBranch") for o in lines if o.get("gitBranch")), "") or ""
@@ -201,6 +205,8 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
     thinking_blocks = 0
 
     for o in lines:
+        if not isinstance(o, dict):  # a valid-JSON non-object line (e.g. "[1,2]")
+            continue
         typ = o.get("type")
         ts = o.get("timestamp", "")
         if ts:
@@ -549,7 +555,7 @@ def _is_conditional(line_low: str) -> bool:
 
 
 def _resolve_target(tok: str, mem_dir: str, line_low: str) -> str:
-    tok = tok.strip().strip("`./")
+    tok = tok.strip().strip("`")  # keep ./ and ../ for normpath to resolve correctly
     if "root" in line_low and "/" not in tok:
         return os.path.basename(tok)          # repo root
     return os.path.normpath(os.path.join(mem_dir, tok)) if mem_dir else tok
