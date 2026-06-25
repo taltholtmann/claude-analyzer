@@ -72,7 +72,7 @@ claude mcp add --scope user claude-analyzer -- \
   ~/code/claude-analyzer/.venv/bin/python ~/code/claude-analyzer/app/mcp_server.py
 ```
 
-Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`. They return meta, stats (skills/tools/subagents/tokens), cost, **compliance**, and **injected_memory**; the large timeline is omitted unless `include_timeline=true`. Verify with `claude mcp list` or `/mcp`.
+Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`, and `get_session_text`. The `analyze_*` tools return meta, stats (skills/tools/subagents/tokens), cost, **compliance**, and **injected_memory**; the timeline is omitted unless `include_timeline=true`, and its text is clipped. **`get_session_text`** returns full, untruncated content — one event by `seq`, or paginated/filtered by `kind` (e.g. `kind='assistant'` for the model's full answers) — so agents can drill into actual text without overflowing the context. Verify with `claude mcp list` or `/mcp`.
 
 Equivalent JSON (`.mcp.json`, project scope):
 ```json

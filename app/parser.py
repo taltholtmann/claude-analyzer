@@ -127,7 +127,7 @@ _SKIP_PREFIXES = ("<local-command-caveat", "<local-command-stdout",
                   "<system-reminder", "<command-message")
 
 
-def _emit_prompt(text: str):
+def _emit_prompt(text: str, full: bool = False):
     """Classify a user prompt: real prompt, slash command, or noise (None)."""
     t = (text or "").strip()
     if not t:
@@ -139,7 +139,7 @@ def _emit_prompt(text: str):
         return {"kind": "command", "text": "⌘ " + label}
     if t.startswith(_SKIP_PREFIXES):
         return None
-    return {"kind": "prompt", "text": _short(t, 600)}
+    return {"kind": "prompt", "text": t if full else _short(t, 600)}
 
 
 def _short(s: str, n: int = 200) -> str:
@@ -167,8 +167,11 @@ def _hms(ts: str) -> str:
 # --------------------------------------------------------------------------- #
 # Main analysis
 # --------------------------------------------------------------------------- #
-def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dict:
-    """Full analysis of a session transcript."""
+def analyze(session_path: str, host_code: str = "", mount_code: str = "",
+            full: bool = False) -> dict:
+    """Full analysis of a session transcript. With full=True, timeline text fields
+    are NOT clipped (used by the MCP get_session_text tool to return full content)."""
+    clip = (lambda s, n=None: (s or "")) if full else _clip
     lines = []
     with open(session_path, encoding="utf-8") as fh:
         for line in fh:
@@ -227,7 +230,7 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                 seq += 1
                 timeline.append({"seq": seq, "ts": _hms(ts), "kind": "memory",
                                  "path": disp, "mtype": mtype, "chars": len(text),
-                                 "text": _clip(text, 4000)})
+                                 "text": clip(text, 4000)})
             continue
 
         msg = o.get("message")
@@ -249,7 +252,7 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
         # ---- user prompt / tool results -----------------------------------
         if typ == "user":
             if isinstance(content, str) and content.strip():
-                pe = _emit_prompt(content)
+                pe = _emit_prompt(content, full)
                 if pe:
                     seq += 1
                     timeline.append({"seq": seq, "ts": _hms(ts), **pe})
@@ -258,7 +261,7 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                     if not isinstance(b, dict):
                         continue
                     if b.get("type") == "text" and b.get("text", "").strip():
-                        pe = _emit_prompt(b["text"])
+                        pe = _emit_prompt(b["text"], full)
                         if pe:
                             seq += 1
                             timeline.append({"seq": seq, "ts": _hms(ts), **pe})
@@ -269,7 +272,7 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                         call = tool_calls.get(tid)
                         if call is not None:
                             call["error"] = is_err
-                            call["result"] = _clip(out_txt, 2000)
+                            call["result"] = clip(out_txt, 2000)
             continue
 
         # ---- assistant: text / thinking / tool use ------------------------
@@ -284,7 +287,7 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "") -> dic
                 if bt == "text" and b.get("text", "").strip():
                     seq += 1
                     timeline.append({"seq": seq, "ts": _hms(ts), "kind": "assistant",
-                                     "text": _clip(b["text"], 1500)})
+                                     "text": clip(b["text"], 1500)})
                 elif bt == "tool_use":
                     seq += 1
                     name = b.get("name", "?")

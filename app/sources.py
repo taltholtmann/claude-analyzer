@@ -124,20 +124,20 @@ def latest_session(project: str = "") -> tuple[str, str] | None:
     return (best[1], best[2]) if best else None
 
 
-def analyze(project: str, session: str) -> dict | None:
+def analyze(project: str, session: str, full: bool = False) -> dict | None:
     try:
         result = None
         if project.startswith(_CODEX_PREFIX):
             for r in _codex_rollouts():
                 if r["id"] == session and _codex_project_id(r["cwd"]) == project:
-                    result = CX.analyze_codex(r["path"], HOST_CODE, MOUNT_CODE)
+                    result = CX.analyze_codex(r["path"], HOST_CODE, MOUNT_CODE, full)
                     break
         else:
             path = os.path.join(CLAUDE_ROOT, project, f"{session}.jsonl")
             # containment: the resolved file must stay inside CLAUDE_ROOT
             if os.path.realpath(path).startswith(os.path.realpath(CLAUDE_ROOT) + os.sep) \
                     and os.path.isfile(path):
-                result = P.analyze(path, HOST_CODE, MOUNT_CODE)
+                result = P.analyze(path, HOST_CODE, MOUNT_CODE, full)
         if result is not None:
             ic = _initial_context(result["meta"], project, result["injected_memory"])
             result["initial_context"] = ic

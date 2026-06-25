@@ -30,7 +30,9 @@ _READ_BINS = ("cat", "sed", "head", "tail", "less", "more", "bat", "view", "nl")
 _SHELL_CALLS = ("exec_command", "shell", "local_shell", "container.exec", "bash")
 
 
-def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
+def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
+                  full: bool = False) -> dict:
+    clip = (lambda s, n=None: (s or "")) if full else P._clip
     lines = []
     with open(path, encoding="utf-8") as fh:
         for line in fh:
@@ -106,16 +108,16 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
                     seq += 1
                     timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "memory",
                                      "path": disp, "mtype": "AGENTS.md", "chars": len(txt),
-                                     "text": P._clip(txt, 4000)})
+                                     "text": clip(txt, 4000)})
                 elif not txt.startswith("<"):  # skip env/instruction XML blocks
                     seq += 1
                     timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "prompt",
-                                     "text": P._short(txt, 600)})
+                                     "text": txt if full else P._short(txt, 600)})
             elif role == "assistant":
                 seq += 1
                 api_turns += 1
                 timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "assistant",
-                                 "text": P._clip(txt, 1500)})
+                                 "text": clip(txt, 1500)})
             # developer / system messages are injected instructions — skip
             continue
 
@@ -166,7 +168,7 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "") -> dict:
             if ev is not None:
                 m = re.search(r"exited with code (\d+)", out or "")
                 ev["error"] = bool(m and m.group(1) != "0")
-                ev["result"] = P._clip(out, 2000)
+                ev["result"] = clip(out, 2000)
             continue
 
         if st == "reasoning":

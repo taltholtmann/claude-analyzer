@@ -74,7 +74,9 @@ def analyze_session(project: str, session_id: str, include_timeline: bool = Fals
     honored — status satisfied/partial/not-satisfied/conditional with evidence),
     injected_memory (which nested CLAUDE.md/AGENTS.md loaded, from which directory),
     files, commands. Set include_timeline=true for the full chronological event
-    stream (prompts, tool calls, memory injections, skill uses) — large.
+    stream (prompts, tool calls, memory injections, skill uses) — note its text is
+    CLIPPED and the stream can be large; for full untruncated content use
+    get_session_text.
     """
     if _safe(project) is None or _safe(session_id) is None:
         return {"error": "invalid project or session id"}
@@ -104,6 +106,41 @@ def analyze_latest(project: str = "", include_timeline: bool = False) -> dict:
     out = _strip(result, include_timeline)
     out["_resolved"] = {"project": pdir, "session_id": sid}
     return out
+
+
+@mcp.tool()
+def get_session_text(project: str, session_id: str, seq: int | None = None,
+                     kind: str = "", offset: int = 0, limit: int = 20) -> dict:
+    """Full, UNTRUNCATED text from a session.
+
+    The analyze_* tools clip text and omit the timeline; use this to read actual
+    content (full assistant answers, full tool output, full prompts/memory).
+    - seq: return just the one timeline event with this seq (its full text). Use a
+      seq seen in analyze_session(include_timeline=true).
+    - kind: filter to 'prompt' | 'assistant' | 'tool' | 'memory' | 'command'
+      (e.g. kind='assistant' for the model's full answers). Ignored when seq is set.
+    - offset / limit: paginate (limit default 20, max 50) to stay within token
+      limits. Returns {total, returned, offset, next_offset, events:[...]}.
+    Tip: a single very large event (e.g. a huge tool output) may still exceed the
+    response limit — that's the genuine full content; narrow with seq + lower limit.
+    """
+    if _safe(project) is None or _safe(session_id) is None:
+        return {"error": "invalid project or session id"}
+    result = sources.analyze(project, session_id, full=True)
+    if result is None:
+        return {"error": f"session not found: {project}/{session_id}"}
+    tl = result.get("timeline", [])
+    if seq is not None:
+        ev = next((e for e in tl if e.get("seq") == seq), None)
+        return ev or {"error": f"no event with seq {seq}"}
+    if kind:
+        tl = [e for e in tl if e.get("kind") == kind]
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
+    page = tl[offset:offset + limit]
+    nxt = offset + limit if offset + limit < len(tl) else None
+    return {"total": len(tl), "returned": len(page), "offset": offset,
+            "next_offset": nxt, "events": page}
 
 
 if __name__ == "__main__":
