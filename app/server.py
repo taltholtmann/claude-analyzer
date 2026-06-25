@@ -1,4 +1,4 @@
-"""Flask server: JSON API + web UI for the Claude/Codex Memory & Compliance Analyzer."""
+"""Flask server: JSON API + web UI for the Claude/Codex Session Analyzer."""
 import os
 
 from flask import Flask, jsonify, render_template, abort

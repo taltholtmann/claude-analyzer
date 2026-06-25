@@ -7,7 +7,7 @@ Usage:
   python cli.py <transcript.jsonl> [--json]   # analyze one file (source auto-detected)
   python cli.py --list                        # list all projects + sessions (JSON)
 
-Default output is Markdown (compliance + memory first); --json emits the full
+Default output is Markdown (overview + memory first); --json emits the full
 result object (the same schema the HTTP API returns).
 """
 from __future__ import annotations
@@ -80,17 +80,6 @@ def to_markdown(d: dict) -> str:
         for ic in d["initial_context"]:
             L.append(f"- [{ic['scope']}] `{ic['path']}` ({ic['chars']} chars)")
         L.append("")
-
-    L.append("## Instruction compliance")
-    if not d["compliance"]:
-        L.append("_No checkable read/follow-file directives in injected memory._")
-    else:
-        order = {"missing": 0, "partial": 1, "conditional": 2, "ok": 3, "na": 4}
-        for c in sorted(d["compliance"], key=lambda c: order.get(c["status"], 9)):
-            be = " [before edit]" if c["before_edit"] else ""
-            L.append(f"- **{c['status'].upper()}** `{c['target']}`{be} — "
-                     f"\"{c['directive']}\" (from `{c['memory_file']}`) — {c['note']}")
-    L.append("")
 
     L.append("## Injected memory (directory cascade)")
     if not d["injected_memory"]:

@@ -3,9 +3,8 @@
 MCP server exposing the transcript analysis to other Claude Code / Codex sessions.
 
 Lets an agent introspect agent behavior: which (nested) CLAUDE.md / AGENTS.md were
-injected, whether "read/follow file X" instructions were honored, which skills/tools
-ran, token usage, and the chronological timeline — for any local Claude Code or Codex
-session.
+injected (and the root/user memory loaded at start), which skills/tools ran, token
+usage, and the chronological timeline — for any local Claude Code or Codex session.
 
 Run:  python app/mcp_server.py   (stdio)
 Register:  claude mcp add --scope user claude-analyzer -- python /abs/path/app/mcp_server.py
@@ -70,9 +69,8 @@ def analyze_session(project: str, session_id: str, include_timeline: bool = Fals
 
     Returns: meta (source/cwd/model/duration), stats (tool_calls + breakdown,
     skills + skill_list, subagents, thinking, cache_hit_rate, …), cost (USD est.
-    for Claude models), compliance (were injected "read/follow file X" directives
-    honored — status satisfied/partial/not-satisfied/conditional with evidence),
-    injected_memory (which nested CLAUDE.md/AGENTS.md loaded, from which directory),
+    for Claude models), injected_memory (which nested CLAUDE.md/AGENTS.md loaded,
+    from which directory), initial_context (root/user memory loaded at start),
     files, commands. Set include_timeline=true for the full chronological event
     stream (prompts, tool calls, memory injections, skill uses) — note its text is
     CLIPPED and the stream can be large; for full untruncated content use
@@ -160,22 +158,6 @@ def search(query: str, project: str = "", cwd: str = "", kind: str = "",
     if not (query or "").strip():
         return {"error": "empty query"}
     return sources.search_sessions(query, project, cwd, kind, limit)
-
-
-@mcp.tool()
-def compliance_summary(project: str = "", cwd: str = "", max_sessions: int = 20) -> dict:
-    """Cross-session instruction compliance — the "are our AGENTS.md/CLAUDE.md rules
-    actually followed over time?" view.
-
-    Across the most recent sessions (scoped to `cwd` or `project`, else all), it
-    aggregates every injected "read/follow file X" directive: how often it was
-    satisfied vs partial/missing/conditional, most-violated first, with example
-    session ids. Use to find guidance that agents repeatedly ignore. `max_sessions`
-    is capped at 50. Returns {sessions_analyzed, directives:[...]}.
-    """
-    if project and _safe(project) is None:
-        return {"error": "invalid project id"}
-    return sources.compliance_overview(project, cwd, max_sessions)
 
 
 if __name__ == "__main__":

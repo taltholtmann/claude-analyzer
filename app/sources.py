@@ -145,41 +145,6 @@ def latest_session(project: str = "", cwd: str = "") -> tuple[str, str] | None:
     return (best[1], best[2]) if best else None
 
 
-def compliance_overview(project: str = "", cwd: str = "", max_sessions: int = 20) -> dict:
-    """
-    Aggregate instruction-compliance across recent sessions: for each injected
-    "read/follow file X" directive, how often it was satisfied/partial/missing/…,
-    most-violated first. Answers "are our AGENTS.md rules actually followed?".
-    Bounded to the newest `max_sessions` (cap 50) to stay fast.
-    """
-    max_sessions = max(1, min(max_sessions, 50))
-    sess = []
-    for pdir in _resolve_projects(project, cwd):
-        for s in list_sessions(pdir):
-            sess.append((s["mtime"], pdir, s["id"]))
-    sess.sort(key=lambda x: x[0], reverse=True)
-    sess = sess[:max_sessions]
-
-    agg: dict = {}
-    analyzed = 0
-    for _, pdir, sid in sess:
-        r = analyze(pdir, sid)
-        if not r:
-            continue
-        analyzed += 1
-        for c in r.get("compliance", []):
-            key = (c["memory_file"], c["target"])
-            a = agg.setdefault(key, {
-                "memory_file": c["memory_file"], "target": c["target"],
-                "before_edit": c["before_edit"], "ok": 0, "partial": 0,
-                "missing": 0, "conditional": 0, "na": 0, "violation_sessions": []})
-            a[c["status"]] = a.get(c["status"], 0) + 1
-            if c["status"] in ("missing", "partial") and len(a["violation_sessions"]) < 10:
-                a["violation_sessions"].append(sid)
-    items = sorted(agg.values(), key=lambda a: a["missing"] + a["partial"], reverse=True)
-    return {"sessions_analyzed": analyzed, "directives": items}
-
-
 def _raw_path(pdir: str, sid: str) -> str | None:
     if pdir.startswith(_CODEX_PREFIX):
         for r in _codex_rollouts():

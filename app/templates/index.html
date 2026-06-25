@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Claude Memory &amp; Compliance Analyzer</title>
+<title>Claude / Codex Session Analyzer</title>
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
@@ -97,31 +97,6 @@
   .more{margin-top:4px;background:none;border:1px solid var(--border);border-radius:5px;
         color:var(--accent);font-size:10.5px;cursor:pointer;padding:2px 9px;font-family:system-ui}
   .more:hover{background:var(--panel2)}
-  /* Compliance summary */
-  .sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-  .pill{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);
-        border-radius:10px;padding:9px 14px;font-size:13px}
-  .pill .num{font-size:20px;font-family:var(--mono);font-weight:600}
-  .pill.ok .num{color:var(--green)} .pill.partial .num{color:var(--amber)}
-  .pill.missing .num{color:var(--red)} .pill.conditional .num{color:var(--slate)}
-  .pill.na .num{color:var(--muted)}
-  /* Directive cards */
-  .dir-card{display:grid;grid-template-columns:14px 1fr;gap:12px;background:var(--panel);
-            border:1px solid var(--border);border-left-width:3px;border-radius:9px;padding:12px 14px;margin:8px 0}
-  .dir-card.ok{border-left-color:var(--green)} .dir-card.partial{border-left-color:var(--amber)}
-  .dir-card.missing{border-left-color:var(--red)} .dir-card.conditional{border-left-color:var(--slate)}
-  .dir-card.na{border-left-color:var(--muted)}
-  .dot{width:12px;height:12px;border-radius:50%;margin-top:3px}
-  .dot.ok{background:var(--green)} .dot.partial{background:var(--amber)}
-  .dot.missing{background:var(--red)} .dot.conditional{background:var(--slate)} .dot.na{background:var(--muted)}
-  .dir-card .tgt{font-family:var(--mono);font-size:13px;color:#cdd6ff}
-  .dir-card .st{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-left:8px}
-  .dir-card.ok .st{color:var(--green)} .dir-card.partial .st{color:var(--amber)}
-  .dir-card.missing .st{color:var(--red)} .dir-card.conditional .st{color:var(--slate)} .dir-card.na .st{color:var(--muted)}
-  .dir-card .quote{font-size:12.5px;color:#c7ccd6;margin:5px 0;font-style:italic}
-  .dir-card .meta{font-size:11.5px;color:var(--muted);line-height:1.5}
-  .dir-card .meta .src{font-family:var(--mono);color:#9fb0d8}
-  .tag-be{font-size:10px;background:#1f2a3d;color:#9db8ff;border-radius:4px;padding:1px 6px;margin-left:7px;font-family:var(--mono)}
   /* Memory cascade */
   .casc{position:relative}
   .mnode{border-left:2px solid var(--border);margin:6px 0;padding:2px 0 2px 14px}
@@ -131,12 +106,6 @@
   .mfile .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   .mfile .fname{font-family:var(--mono);font-size:12.5px;color:#e6e9ef}
   .mtype{font-size:10px;border-radius:4px;padding:1px 6px;background:#283042;color:var(--muted);font-family:var(--mono)}
-  .mfile .ds{margin-top:6px;display:flex;flex-direction:column;gap:3px}
-  .mfile .d{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
-  .mfile .d .mini{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
-  .mini.ok{background:var(--green)} .mini.partial{background:var(--amber)}
-  .mini.missing{background:var(--red)} .mini.conditional{background:var(--slate)} .mini.na{background:var(--muted)}
-  .mfile .d .dt{font-family:var(--mono);color:#9fb0d8}
   details.content{margin-top:7px}
   details.content summary{cursor:pointer;font-size:11px;color:var(--accent);user-select:none}
   details.content pre{background:#10131a;border:1px solid var(--border);border-radius:6px;
@@ -176,7 +145,7 @@
 <body>
 <div class="app">
   <aside class="side">
-    <h1>Memory &amp; Compliance Analyzer<small>Claude Code + Codex transcripts · local</small></h1>
+    <h1>Session Analyzer<small>Claude Code + Codex transcripts · local</small></h1>
     <div class="ctl"><select id="project"></select></div>
     <div class="sessions" id="sessions"></div>
   </aside>
@@ -186,7 +155,6 @@
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => (s==null?"":String(s)).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const STL = {ok:"satisfied", partial:"partial", missing:"NOT satisfied", conditional:"conditional", na:"n/a"};
 let cur = {project:null, session:null};
 
 async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(r.status); return r.json(); }
@@ -256,8 +224,7 @@ function render(d){
   </div>`;
 
   $("#main").innerHTML = head + overview(d) + timelineSection(d) +
-    compliancePanel(d.compliance) + memoryCascade(d.injected_memory, d.compliance) +
-    rawDetails(d) + footer();
+    memoryCascade(d.injected_memory) + rawDetails(d) + footer();
 }
 
 /* ---- 0. Session overview (metrics, tokens, tool breakdown) ---- */
@@ -308,35 +275,11 @@ function overview(d){
      <h3>Tool calls by type</h3><div class="bars">${bars}</div>${skillsBlk}${subs}`);
 }
 
-/* ---- 1. Compliance ---- */
-function compliancePanel(comp){
-  if(!comp.length)
-    return sec("Instruction compliance", 0,
-      `<div class="none">No checkable "read/follow file" instructions found in the injected memory files.</div>`);
-  const order = ["missing","partial","conditional","ok","na"];
-  const cnt = {}; comp.forEach(c=>cnt[c.status]=(cnt[c.status]||0)+1);
-  const pills = order.filter(s=>cnt[s]).map(s=>
-    `<div class="pill ${s}"><span class="num">${cnt[s]}</span> ${STL[s]}</div>`).join("");
-  const cards = [...comp].sort((a,b)=>order.indexOf(a.status)-order.indexOf(b.status)).map(c=>`
-    <div class="dir-card ${esc(c.status)}">
-      <div class="dot ${esc(c.status)}"></div>
-      <div>
-        <div><span class="tgt">${esc(c.target)}</span>${c.before_edit?`<span class="tag-be">before edit</span>`:""}<span class="st">${STL[c.status]||c.status}</span></div>
-        <div class="quote">“${esc(c.directive)}”</div>
-        <div class="meta">Source: <span class="src">${esc(c.memory_file)}</span><br>${esc(c.note)}</div>
-      </div>
-    </div>`).join("");
-  return sec("Instruction compliance", comp.length, `<div class="sum">${pills}</div>${cards}`);
-}
-
-/* ---- 2. Memory injection as a directory cascade ---- */
-function memoryCascade(mem, comp){
+/* ---- Memory injection as a directory cascade ---- */
+function memoryCascade(mem){
   if(!mem.length)
     return sec("Injected memory files", 0,
       `<div class="none">No nested CLAUDE.md/AGENTS.md injected (Claude did not work in any subdirectory containing memory files).</div>`);
-  // compliance lookup per (memory_file -> [directives])
-  const byFile = {};
-  comp.forEach(c=>{ (byFile[c.memory_file] ||= []).push(c); });
   // group by directory, sort by depth
   const dirs = {};
   mem.forEach(m=>{ (dirs[m.dir] ||= []).push(m); });
@@ -345,16 +288,12 @@ function memoryCascade(mem, comp){
     const depth = dir? dir.split("/").length : 0;
     const segs = dir.split("/");
     const label = `<span>${esc(segs.slice(0,-1).join("/"))}${segs.length>1?"/":""}</span><b>${esc(segs[segs.length-1]||dir)}</b>`;
-    const files = dirs[dir].map(f=>{
-      const dirvs = (byFile[f.path]||[]).map(c=>
-        `<div class="d"><span class="mini ${esc(c.status)}"></span><span class="dt">${esc(c.target)}</span>— ${esc(STL[c.status])}</div>`).join("");
-      return `<div class="mfile">
+    const files = dirs[dir].map(f=>`
+      <div class="mfile">
         <div class="top"><span class="fname">${esc(f.name)}</span><span class="mtype">${esc(f.mtype||"Memory")}</span>
           <span style="color:var(--muted);font-size:11px">${f.chars} chars · ${esc(f.ts)}</span></div>
-        ${dirvs?`<div class="ds">${dirvs}</div>`:""}
         <details class="content"><summary>Content</summary><pre>${esc(f.text.trim()||"(empty)")}</pre></details>
-      </div>`;
-    }).join("");
+      </div>`).join("");
     return `<div class="mnode" style="margin-left:${depth*15}px">
       <div class="dirpath">${label||"(root)"}</div>${files}</div>`;
   }).join("");
@@ -426,8 +365,8 @@ function rawDetails(d){
 
 function footer(){
   return `<div class="foot">
-    <b>Focus of this tool:</b> memory injection (which nested CLAUDE.md/AGENTS.md were loaded per directory)
-    and instruction compliance. For full, multi-provider transcript viewing (timeline, tokens, Codex/Gemini)
+    <b>Focus of this tool:</b> memory injection (which nested CLAUDE.md/AGENTS.md were loaded per directory),
+    the chronological timeline, and skill/tool usage. For full, multi-provider transcript viewing
     use <code>claude-code-history-viewer</code> (CCHV) as a complement.
   </div>`;
 }

@@ -9,9 +9,8 @@ Codex uses the OpenAI Responses format. Each line is `{timestamp, type, payload}
 
 Memory model: Codex injects each AGENTS.md as a *user* message whose text starts
 with `# AGENTS.md instructions for <dir>`. We treat those as injected memory — the
-direct analog of Claude's nested_memory attachments — so the same compliance logic
-applies. This module normalizes a rollout into the primitives `parser.finalize`
-expects, producing the identical result schema.
+direct analog of Claude's nested_memory attachments. This module normalizes a rollout
+into the primitives `parser.finalize` expects, producing the identical result schema.
 """
 from __future__ import annotations
 
@@ -23,9 +22,8 @@ import parser as P
 
 # header that prefixes a Codex-injected AGENTS.md user message
 _AGENTS_HDR = re.compile(r"^#\s*AGENTS\.md instructions for (.+?)\s*$", re.MULTILINE)
-# shell programs that read a file's content. Intentionally broader than
-# parser.READ_CMDS (includes `sed`/`nl`): Codex commonly reads files via `sed -n`,
-# whereas in Claude `sed`/`grep` would cause false-positive "read" matches.
+# shell programs that read a file's content (Codex commonly reads files via `sed -n`),
+# used to attribute file reads to a shell command in the files-read list.
 _READ_BINS = ("cat", "sed", "head", "tail", "less", "more", "bat", "view", "nl")
 _SHELL_CALLS = ("exec_command", "shell", "local_shell", "container.exec", "bash")
 
@@ -47,8 +45,6 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
     cwd, version = "", ""
     models: set[str] = set()
     timeline: list[dict] = []
-    read_ev: list[tuple] = []
-    edit_ev: list[tuple] = []
     commands: list[dict] = []
     injected: list[dict] = []
     files_read: list[str] = []
@@ -106,8 +102,7 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
                     injected.append({
                         "path": disp, "dir": mdir, "name": "AGENTS.md",
                         "mtype": "AGENTS.md", "text": txt, "chars": len(txt),
-                        "ts": P._hms(ts), "directives": P._directives(txt),
-                        "file_directives": P._extract_file_directives(txt, mdir),
+                        "ts": P._hms(ts),
                     })
                     seq += 1
                     timeline.append({"seq": seq, "ts": P._hms(ts), "kind": "memory",
@@ -143,7 +138,6 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
                 commands.append({"seq": seq, "ts": P._hms(ts), "command": cmd})
                 rp = _read_path(cmd, cwd)
                 if rp:
-                    read_ev.append((seq, rp))
                     files_read.append(rp)
                 # skill usage: Codex "uses" a skill by reading its SKILL.md
                 sk = re.search(r"skills/([\w./-]+?)/SKILL\.md", cmd)
@@ -155,7 +149,6 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
                 ev["tool"] = "apply_patch"
                 ev["target"] = ", ".join(paths)
                 for fp in paths:
-                    edit_ev.append((seq, fp))
                     files_edited.append(fp)
             else:
                 ev["target"] = P._short(json.dumps(args), 120)
@@ -182,11 +175,10 @@ def analyze_codex(path: str, host_code: str = "", mount_code: str = "",
     return P.finalize(
         source="codex", session_id=os.path.basename(path)[:-6],
         cwd=cwd, branch="", version=version, models=models,
-        timeline=timeline, read_ev=read_ev, edit_ev=edit_ev, commands=commands,
+        timeline=timeline, commands=commands,
         injected=injected, tok=tok, api_turns=api_turns,
         thinking_blocks=thinking_blocks, ts_all=ts_all,
         files_read=files_read, files_edited=files_edited,
-        host_code=host_code, mount_code=mount_code,
     )
 
 

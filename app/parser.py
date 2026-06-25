@@ -4,7 +4,7 @@ Parsing and analysis logic for Claude Code session transcripts (.jsonl).
 A session lives at ~/.claude/projects/<project-dir>/<session-id>.jsonl. Each line is
 a JSON object with fields such as `type`, `timestamp`, `cwd`, `message`, `attachment`.
 This module reads the transcript and builds a structured, chronological analysis with
-a focus on injected memory files and instruction compliance.
+a focus on injected memory files, the timeline, and skill/tool usage.
 """
 from __future__ import annotations
 
@@ -19,9 +19,6 @@ import pricing
 
 FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-# Bash programs that display a file's *contents* (no grep/sed/awk — those
-# search/transform but do not read the file for comprehension).
-READ_CMDS = ("cat", "head", "tail", "less", "more", "bat", "view", "open")
 
 
 # --------------------------------------------------------------------------- #
@@ -193,8 +190,6 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
     tool_calls: dict[str, dict] = {}          # tool_use_id -> call info
     files_read: list[str] = []
     files_edited: list[str] = []
-    read_ev: list[tuple] = []                 # (seq, relpath) Read tool
-    edit_ev: list[tuple] = []                 # (seq, relpath) Edit/Write
     commands: list[dict] = []
     injected: list[dict] = []
     models: set[str] = set()
@@ -230,8 +225,6 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
                     "text": text,
                     "chars": len(text),
                     "ts": _hms(ts),
-                    "directives": _directives(text),
-                    "file_directives": _extract_file_directives(text, mdir),
                 })
                 seq += 1
                 timeline.append({"seq": seq, "ts": _hms(ts), "kind": "memory",
@@ -317,10 +310,8 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
                         rel = _rel(fp, cwd)
                         if name in EDIT_TOOLS:
                             files_edited.append(rel)
-                            edit_ev.append((seq, rel))
                         else:
                             files_read.append(rel)
-                            read_ev.append((seq, rel))
                     if name == "Bash" and inp.get("command"):
                         commands.append({"seq": seq, "ts": _hms(ts),
                                          "command": inp["command"]})
@@ -329,30 +320,23 @@ def analyze(session_path: str, host_code: str = "", mount_code: str = "",
     return finalize(
         source="claude", session_id=os.path.basename(session_path)[:-6],
         cwd=cwd, branch=branch, version=version, models=models,
-        timeline=timeline, read_ev=read_ev, edit_ev=edit_ev, commands=commands,
+        timeline=timeline, commands=commands,
         injected=injected, tok=tok, api_turns=api_turns,
         thinking_blocks=thinking_blocks, ts_all=ts_all,
         files_read=files_read, files_edited=files_edited,
-        host_code=host_code, mount_code=mount_code,
     )
 
 
 def finalize(*, source: str, session_id: str, cwd: str, branch: str, version: str,
              models: set[str], timeline: list[dict],
-             read_ev: list[tuple[int, str]], edit_ev: list[tuple[int, str]],
              commands: list[dict], injected: list[dict], tok: dict[str, int],
              api_turns: int, thinking_blocks: int, ts_all: list[str],
-             files_read: list[str], files_edited: list[str],
-             host_code: str, mount_code: str) -> dict:
+             files_read: list[str], files_edited: list[str]) -> dict:
     """Build the canonical result dict from collected primitives.
 
     Shared by the Claude reader (above) and the Codex reader (codex.py) so both
-    produce the exact same schema, compliance logic, and stats.
+    produce the exact same schema and stats.
     """
-    bash_ev = [(c["seq"], c["command"]) for c in commands]
-    compliance = _compliance(injected, read_ev, bash_ev, edit_ev,
-                             cwd, host_code, mount_code)
-
     tool_counts: Counter = Counter()
     tool_errors: Counter = Counter()
     for e in timeline:
@@ -413,7 +397,6 @@ def finalize(*, source: str, session_id: str, cwd: str, branch: str, version: st
         "files": {"read": _counted(files_read), "edited": _counted(files_edited)},
         "commands": commands,
         "injected_memory": injected,
-        "compliance": compliance,
     }
 
 
@@ -478,206 +461,3 @@ def _duration(ts_all: list[str]) -> str:
         return ""
 
 
-# --------------------------------------------------------------------------- #
-# Directive extraction & compliance
-# --------------------------------------------------------------------------- #
-_DIRECTIVE_RE = re.compile(
-    r"^\s*[-*]?\s*((?:Always|Never|Read|Follow|Use|Run|Check|Do not|Don't|Avoid|Ensure|Prefer|Make sure)\b.*)",
-    re.IGNORECASE,
-)
-
-
-def _directives(text: str) -> list[str]:
-    """Extract imperative instruction lines from a memory file (display only)."""
-    out = []
-    for line in (text or "").splitlines():
-        m = _DIRECTIVE_RE.match(line)
-        if m:
-            out.append(m.group(1).strip())
-    return out[:12]
-
-
-# --- generalized "read/follow file X" directives --------------------------- #
-_READ_VERB = re.compile(
-    r"\b(read|follow|see|consult|refer to|review|check)\b", re.IGNORECASE)
-_FILE_TOKEN = re.compile(
-    r"`([^`]+)`|([A-Za-z0-9_./\-]+\.(?:md|markdown|txt|ya?ml|json))", re.IGNORECASE)
-_BARE = re.compile(r"\b(README|AGENTS|CLAUDE)\b")
-
-
-def _extract_file_directives(text: str, mem_dir: str) -> list[dict]:
-    """
-    Directives of the form "Read/Follow/See <file> ..." from a memory file.
-    Returns checkable directives with the target path resolved relative to the repo.
-    """
-    out, seen = [], set()
-    for line in (text or "").splitlines():
-        if not _READ_VERB.search(line):
-            continue
-        low = line.lower()
-        tokens = []
-        for m in _FILE_TOKEN.finditer(line):
-            tok = (m.group(1) or m.group(2) or "").strip().strip("`")
-            if tok and "." in os.path.basename(tok):
-                tokens.append(tok)
-        if not tokens:  # bare README/AGENTS/CLAUDE without extension
-            tokens = [b + ".md" for b in _BARE.findall(line)]
-        for tok in tokens:
-            target = _resolve_target(tok, mem_dir, low)
-            if target in seen:
-                continue
-            seen.add(target)
-            out.append({
-                "raw": line.strip()[:160],
-                "target": target,
-                "name": os.path.basename(target),
-                "before_edit": ("before" in low and "edit" in low) or "first" in low,
-                "conditional": _is_conditional(low),
-            })
-    return out
-
-
-# a directive is conditional when it only applies to a context (a file type, an
-# area of the codebase, an explicit "for/when/if") rather than unconditionally.
-# anchored to the start of the line so a mid-sentence colon (e.g. "... server: ...")
-# doesn't falsely mark an unconditional directive as conditional.
-_COND_RE = re.compile(
-    r"^\s*[-*]?\s*("
-    r"(for |when |if )|"
-    r"[\w/+ ]*\b(code|files?|tests?|frontend|backend|storefront|administration|server|client)\b\s*:"
-    r")",
-    re.IGNORECASE,
-)
-
-
-def _is_conditional(line_low: str) -> bool:
-    return bool(_COND_RE.search(line_low))
-
-
-def _resolve_target(tok: str, mem_dir: str, line_low: str) -> str:
-    tok = tok.strip().strip("`")  # keep ./ and ../ for normpath to resolve correctly
-    if "root" in line_low and "/" not in tok:
-        return os.path.basename(tok)          # repo root
-    return os.path.normpath(os.path.join(mem_dir, tok)) if mem_dir else tok
-
-
-def _compliance(injected, reads, bashes, edits,
-                cwd, host_code, mount_code) -> list[dict]:
-    """
-    For each injected memory file, check its "read file X" directives against actual
-    behavior: X counts as satisfied if X was read (Read tool) or opened via Bash
-    (cat/head/...), or is itself an injected memory file. `before_edit` directives
-    additionally require: before the first edit.
-    """
-    injected_paths = {m["path"] for m in injected}
-    first_edit = edits[0][0] if edits else None
-    results = []
-    seen = set()
-
-    for m in injected:
-        for fd in m["file_directives"]:
-            key = (m["path"], fd["target"])
-            if key in seen:
-                continue
-            seen.add(key)
-            tgt, name = fd["target"], fd["name"]
-
-            # 1) already in context (injected as memory / root memory)?
-            loaded, why = _loaded_memory(tgt, injected_paths)
-            if loaded:
-                results.append(_mk(m, fd, "ok", why))
-                continue
-
-            # 2) conditional directive ("For PHP files, follow ...") — not hard-checkable
-            if fd["conditional"]:
-                results.append(_mk(m, fd, "conditional",
-                                   'conditional ("for/when ...") — only relevant if the condition held'))
-                continue
-
-            # 3) this exact file read (Read tool or cat/head/...)?
-            read_seq, how = _find_read(tgt, name, reads, bashes)
-            if read_seq is not None:
-                if fd["before_edit"] and first_edit is not None and read_seq > first_edit:
-                    results.append(_mk(m, fd, "partial", f"read only AFTER the first edit ({how})"))
-                else:
-                    results.append(_mk(m, fd, "ok", how))
-                continue
-
-            # 4) not read — does the target exist & are there related reads?
-            on_disk = _exists(tgt, cwd, host_code, mount_code)
-            related = _find_related(name, reads, bashes)
-            if related:
-                results.append(_mk(m, fd, "partial",
-                                   f"same-named file read elsewhere ({related}), but not this one"))
-            elif on_disk:
-                results.append(_mk(m, fd, "missing", f"{tgt} exists but was never read"))
-            else:
-                results.append(_mk(m, fd, "na", f"{tgt} not found in repo"))
-    return results
-
-
-def _mk(m, fd, status, note):
-    return {"memory_file": m["path"], "directive": fd["raw"],
-            "target": fd["target"], "before_edit": fd["before_edit"],
-            "status": status, "note": note}
-
-
-def _loaded_memory(tgt, injected_paths):
-    """Memory file that is in context anyway: nested-injected or root memory."""
-    if tgt in injected_paths:
-        return True, f"injected as memory ({tgt})"
-    if os.path.basename(tgt) in ("AGENTS.md", "CLAUDE.md") and "/" not in tgt:
-        return True, "root memory (loaded automatically)"
-    return False, ""
-
-
-def _bash_reads(c: str, name: str, tgt: str | None) -> bool:
-    """
-    True if the Bash command displays the file via cat/head/... (token-exact).
-    With `tgt` (relative path) the exact path is required; without `tgt` the
-    file name alone is enough (used for "same-named file elsewhere").
-    """
-    toks = [t.strip("'\"") for t in c.replace("|", " ").replace(";", " ").replace("&", " ").split()]
-    if not any(t in READ_CMDS for t in toks):
-        return False
-    for t in toks:
-        if tgt:
-            # exact, or the path ends at a separator before the target (avoid
-            # "eslint-config.json".endswith("config.json") false positives)
-            if t == tgt or t.endswith("/" + tgt):
-                return True
-        elif t == name or t.endswith("/" + name):
-            return True
-    return False
-
-
-def _find_read(tgt, name, reads, bashes):
-    for s, p in reads:
-        if p == tgt or (os.path.basename(p) == name and os.path.dirname(p) == os.path.dirname(tgt)):
-            return s, f"Read {p}"
-    for s, c in bashes:
-        if _bash_reads(c, name, tgt):
-            return s, f"Bash: {_short(c, 70)}"
-    return None, ""
-
-
-def _find_related(name, reads, bashes):
-    for _, p in reads:
-        if os.path.basename(p) == name:
-            return p
-    for _, c in bashes:
-        if _bash_reads(c, name, None):
-            return _short(c, 60)
-    return ""
-
-
-def _exists(relpath, cwd, host_code, mount_code) -> bool:
-    base = cwd
-    if host_code and mount_code and cwd.startswith(host_code):
-        base = mount_code + cwd[len(host_code):]
-    # `relpath` and `cwd` come from transcript content — confine the probe to
-    # the repo so a crafted "../../etc/passwd" can't be used as a file oracle.
-    full = os.path.realpath(os.path.join(base, relpath))
-    if not full.startswith(os.path.realpath(base) + os.sep):
-        return False
-    return os.path.isfile(full)
