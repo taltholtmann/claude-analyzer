@@ -109,19 +109,73 @@ def list_sessions(project: str) -> list[dict]:
     return P.list_sessions(CLAUDE_ROOT, project)
 
 
-def latest_session(project: str = "") -> tuple[str, str] | None:
+def projects_for_cwd(cwd: str) -> list[str]:
+    """Project ids (Claude and/or Codex) for a repo path — both derive from cwd."""
+    out = []
+    claude_id = cwd.replace("/", "-").replace(".", "-")
+    if os.path.isdir(os.path.join(CLAUDE_ROOT, claude_id)):
+        out.append(claude_id)
+    codex_id = _codex_project_id(cwd)
+    if any(_codex_project_id(r["cwd"]) == codex_id for r in _codex_rollouts()):
+        out.append(codex_id)
+    return out
+
+
+def _resolve_projects(project: str = "", cwd: str = "") -> list[str]:
+    if cwd:
+        return projects_for_cwd(cwd)
+    if project:
+        return [project]
+    return [p["dir"] for p in list_projects()]
+
+
+def latest_session(project: str = "", cwd: str = "") -> tuple[str, str] | None:
     """(project_dir, session_id) of the most recently active session, or None.
 
-    Within `project` if given, else across all projects. Cheap: list_sessions is
-    already sorted newest-first, so only each project's head is compared.
+    Scoped to `cwd` (a repo path) or `project` if given, else across all projects.
+    list_sessions is sorted newest-first, so only each project's head is compared.
     """
     best = None
-    projects = [{"dir": project}] if project else list_projects()
-    for p in projects:
-        sess = list_sessions(p["dir"])
+    for pdir in _resolve_projects(project, cwd):
+        sess = list_sessions(pdir)
         if sess and (best is None or sess[0]["mtime"] > best[0]):
-            best = (sess[0]["mtime"], p["dir"], sess[0]["id"])
+            best = (sess[0]["mtime"], pdir, sess[0]["id"])
     return (best[1], best[2]) if best else None
+
+
+def compliance_overview(project: str = "", cwd: str = "", max_sessions: int = 20) -> dict:
+    """
+    Aggregate instruction-compliance across recent sessions: for each injected
+    "read/follow file X" directive, how often it was satisfied/partial/missing/…,
+    most-violated first. Answers "are our AGENTS.md rules actually followed?".
+    Bounded to the newest `max_sessions` (cap 50) to stay fast.
+    """
+    max_sessions = max(1, min(max_sessions, 50))
+    sess = []
+    for pdir in _resolve_projects(project, cwd):
+        for s in list_sessions(pdir):
+            sess.append((s["mtime"], pdir, s["id"]))
+    sess.sort(key=lambda x: x[0], reverse=True)
+    sess = sess[:max_sessions]
+
+    agg: dict = {}
+    analyzed = 0
+    for _, pdir, sid in sess:
+        r = analyze(pdir, sid)
+        if not r:
+            continue
+        analyzed += 1
+        for c in r.get("compliance", []):
+            key = (c["memory_file"], c["target"])
+            a = agg.setdefault(key, {
+                "memory_file": c["memory_file"], "target": c["target"],
+                "before_edit": c["before_edit"], "ok": 0, "partial": 0,
+                "missing": 0, "conditional": 0, "na": 0, "violation_sessions": []})
+            a[c["status"]] = a.get(c["status"], 0) + 1
+            if c["status"] in ("missing", "partial") and len(a["violation_sessions"]) < 10:
+                a["violation_sessions"].append(sid)
+    items = sorted(agg.values(), key=lambda a: a["missing"] + a["partial"], reverse=True)
+    return {"sessions_analyzed": analyzed, "directives": items}
 
 
 def analyze(project: str, session: str, full: bool = False) -> dict | None:

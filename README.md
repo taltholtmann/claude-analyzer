@@ -72,7 +72,13 @@ claude mcp add --scope user claude-analyzer -- \
   ~/code/claude-analyzer/.venv/bin/python ~/code/claude-analyzer/app/mcp_server.py
 ```
 
-Tools: `list_projects`, `list_sessions`, `analyze_session`, `analyze_latest`, and `get_session_text`. The `analyze_*` tools return meta, stats (skills/tools/subagents/tokens), cost, **compliance**, and **injected_memory**; the timeline is omitted unless `include_timeline=true`, and its text is clipped. **`get_session_text`** returns full, untruncated content — one event by `seq`, or paginated/filtered by `kind` (e.g. `kind='assistant'` for the model's full answers) — so agents can drill into actual text without overflowing the context. Verify with `claude mcp list` or `/mcp`.
+Tools:
+- `list_projects`, `list_sessions` — discovery.
+- `analyze_session`, `analyze_latest` — full single-session analysis (meta, stats, cost, **compliance**, **injected_memory**; timeline omitted unless `include_timeline=true`, and clipped). `analyze_latest(cwd="/path/to/repo")` scopes to a repo — an agent can introspect *its own* last run without knowing the project id.
+- `get_session_text` — full, untruncated content: one event by `seq`, or paginated/filtered by `kind` (e.g. `kind='assistant'` for the model's full answers) — drill into text without overflowing the context.
+- `compliance_summary(cwd|project, max_sessions)` — **cross-session** view: across recent sessions, which "read/follow file X" rules from your AGENTS.md/CLAUDE.md get followed vs ignored, most-violated first. The "are our guidance rules actually working?" report.
+
+Verify with `claude mcp list` or `/mcp`.
 
 Equivalent JSON (`.mcp.json`, project scope):
 ```json

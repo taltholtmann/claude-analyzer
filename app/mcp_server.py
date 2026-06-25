@@ -87,16 +87,17 @@ def analyze_session(project: str, session_id: str, include_timeline: bool = Fals
 
 
 @mcp.tool()
-def analyze_latest(project: str = "", include_timeline: bool = False) -> dict:
+def analyze_latest(project: str = "", cwd: str = "", include_timeline: bool = False) -> dict:
     """Analyze the most recently active session.
 
-    Within `project` if given, otherwise the most recent session across all
-    projects. Handy for "analyze my last session". Same shape as analyze_session,
-    plus the resolved project/session ids under `_resolved`.
+    Scoped to `cwd` (a repo path — e.g. your current working directory) or to
+    `project` if given, otherwise the most recent session across all projects.
+    Handy: analyze_latest(cwd="/path/to/repo") to introspect your own last run.
+    Same shape as analyze_session, plus the resolved ids under `_resolved`.
     """
     if project and _safe(project) is None:
         return {"error": "invalid project id"}
-    found = sources.latest_session(project)
+    found = sources.latest_session(project, cwd)
     if not found:
         return {"error": "no sessions found"}
     pdir, sid = found
@@ -141,6 +142,22 @@ def get_session_text(project: str, session_id: str, seq: int | None = None,
     nxt = offset + limit if offset + limit < len(tl) else None
     return {"total": len(tl), "returned": len(page), "offset": offset,
             "next_offset": nxt, "events": page}
+
+
+@mcp.tool()
+def compliance_summary(project: str = "", cwd: str = "", max_sessions: int = 20) -> dict:
+    """Cross-session instruction compliance — the "are our AGENTS.md/CLAUDE.md rules
+    actually followed over time?" view.
+
+    Across the most recent sessions (scoped to `cwd` or `project`, else all), it
+    aggregates every injected "read/follow file X" directive: how often it was
+    satisfied vs partial/missing/conditional, most-violated first, with example
+    session ids. Use to find guidance that agents repeatedly ignore. `max_sessions`
+    is capped at 50. Returns {sessions_analyzed, directives:[...]}.
+    """
+    if project and _safe(project) is None:
+        return {"error": "invalid project id"}
+    return sources.compliance_overview(project, cwd, max_sessions)
 
 
 if __name__ == "__main__":
